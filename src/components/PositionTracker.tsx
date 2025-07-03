@@ -3,6 +3,7 @@ import { format } from 'date-fns';
 import { TrendingUp, TrendingDown, Circle } from 'lucide-react';
 import { Trade, Position } from '../types/trade';
 import { calculatePositions } from '../utils/calculations';
+import { formatCurrency } from '../utils/formatters';
 
 interface PositionTrackerProps {
   trades: Trade[];
@@ -16,14 +17,6 @@ export function PositionTracker({ trades }: PositionTrackerProps) {
   
   const totalRealizedPnL = closedPositions.reduce((sum, p) => sum + p.realizedPnL, 0);
   const totalUnrealizedPnL = openPositions.reduce((sum, p) => sum + p.unrealizedPnL, 0);
-
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-      minimumFractionDigits: 2
-    }).format(value);
-  };
 
   const PnLDisplay = ({ value, className = '' }: { value: number; className?: string }) => {
     const isPositive = value > 0;

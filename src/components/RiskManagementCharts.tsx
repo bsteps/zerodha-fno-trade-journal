@@ -1,9 +1,13 @@
-import React, { useMemo } from "react"
-import { format } from "date-fns"
-import { LineChart, Line, AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from "recharts"
+import { AlertTriangle, DollarSign, Info, Target, TrendingDown } from "lucide-react"
+import { useMemo } from "react"
+import { Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts"
 import { Trade } from "../types/trade"
-import { calculateDrawdownAnalysis, calculateRiskRewardAnalysis, calculatePositionSizeAnalysis, DrawdownAnalysis, RiskRewardAnalysis, PositionSizeAnalysis } from "../utils/calculations"
-import { TrendingDown, AlertTriangle, Target, DollarSign } from "lucide-react"
+import { calculateDrawdownAnalysis, calculatePositionSizeAnalysis, calculateRiskRewardAnalysis } from "../utils/calculations"
+import { AIRecommendations } from './AIRecommendations'
+import { InfoTooltip } from "./InfoTooltip"
+import { StatCard } from './StatCard'
+import { CustomTooltip } from './CustomTooltip'
+import { formatCompactCurrency, formatNumber, formatPercentage } from "../utils/formatters"
 
 interface RiskManagementChartsProps {
   trades: Trade[]
@@ -15,79 +19,6 @@ export function RiskManagementCharts({ trades }: RiskManagementChartsProps) {
   const drawdownAnalysis = useMemo(() => calculateDrawdownAnalysis(trades), [trades])
   const riskRewardAnalysis = useMemo(() => calculateRiskRewardAnalysis(trades), [trades])
   const positionSizeAnalysis = useMemo(() => calculatePositionSizeAnalysis(trades), [trades])
-
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0
-    }).format(value)
-  }
-
-  const formatNumber = (value: number) => {
-    return new Intl.NumberFormat('en-IN', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2
-    }).format(value)
-  }
-
-  const formatPercentage = (value: number) => {
-    return `${formatNumber(value)}%`
-  }
-
-  // Custom tooltip component
-  const CustomTooltip = ({ active, payload, label }: any) => {
-    if (active && payload && payload.length) {
-      return (
-        <div className='bg-white p-3 border border-gray-300 rounded-lg shadow-lg'>
-          <p className='text-gray-900 font-medium'>{label}</p>
-          {payload.map((entry: any, index: number) => (
-            <p key={index} style={{ color: entry.color }}>
-              {`${entry.name}: ${
-                entry.name.includes('P&L') || entry.name.includes('Amount') || entry.name.includes('Value')
-                  ? formatCurrency(entry.value)
-                  : entry.name.includes('%') || entry.name.includes('Rate')
-                  ? formatPercentage(entry.value)
-                  : formatNumber(entry.value)
-              }`}
-            </p>
-          ))}
-        </div>
-      )
-    }
-    return null
-  }
-
-  // Stat card component
-  const StatCard = ({ title, value, icon: Icon, color, subtitle }: {
-    title: string
-    value: string | number
-    icon: any
-    color: 'red' | 'green' | 'blue' | 'yellow' | 'gray'
-    subtitle?: string
-  }) => {
-    const colorClasses = {
-      red: 'bg-red-50 text-red-700 border-red-200',
-      green: 'bg-green-50 text-green-700 border-green-200',
-      blue: 'bg-blue-50 text-blue-700 border-blue-200',
-      yellow: 'bg-yellow-50 text-yellow-700 border-yellow-200',
-      gray: 'bg-gray-50 text-gray-700 border-gray-200'
-    }
-
-    return (
-      <div className={`card border-l-4 ${colorClasses[color]}`}>
-        <div className='flex items-center justify-between'>
-          <div>
-            <p className='text-sm font-medium opacity-75'>{title}</p>
-            <p className='text-2xl font-bold'>{value}</p>
-            {subtitle && <p className='text-xs opacity-60 mt-1'>{subtitle}</p>}
-          </div>
-          <Icon className='w-8 h-8 opacity-50' />
-        </div>
-      </div>
-    )
-  }
 
   // Prepare drawdown chart data
   const drawdownChartData = drawdownAnalysis.drawdownPeriods.map((period, index) => ({
@@ -106,22 +37,27 @@ export function RiskManagementCharts({ trades }: RiskManagementChartsProps) {
         <h2 className='text-2xl font-bold text-gray-900 mb-6 flex items-center'>
           <AlertTriangle className='w-6 h-6 text-red-600 mr-2' />
           Risk Management Analytics
+          <InfoTooltip content="Comprehensive analysis of your risk management performance including drawdowns, recovery patterns, risk-reward ratios, and position sizing effectiveness. These metrics help you understand and improve your risk control." id="risk-management-overview">
+            <Info className="w-5 h-5 text-gray-400 ml-2 hover:text-gray-600" />
+          </InfoTooltip>
         </h2>
         
         <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4'>
           <StatCard
             title="Max Drawdown"
-            value={formatCurrency(drawdownAnalysis.maxDrawdown)}
+            value={formatCompactCurrency(drawdownAnalysis.maxDrawdown)}
             icon={TrendingDown}
             color="red"
             subtitle={`${formatPercentage(drawdownAnalysis.maxDrawdownPercentage)}`}
+            tooltip="The largest peak-to-trough decline in your account value. This represents your worst-case loss scenario and indicates the maximum risk you've experienced. Keep this under 20% for good risk management."
           />
           <StatCard
             title="Current Drawdown"
-            value={formatCurrency(drawdownAnalysis.currentDrawdown)}
+            value={formatCompactCurrency(drawdownAnalysis.currentDrawdown)}
             icon={TrendingDown}
             color={drawdownAnalysis.currentDrawdown > 0 ? "red" : "green"}
             subtitle={`${formatPercentage(drawdownAnalysis.currentDrawdownPercentage)}`}
+            tooltip="Your current decline from the most recent account peak. If positive, you're currently in a losing streak. Monitor this closely and consider reducing position sizes if it exceeds 10%."
           />
           <StatCard
             title="Avg Recovery Days"
@@ -129,6 +65,7 @@ export function RiskManagementCharts({ trades }: RiskManagementChartsProps) {
             icon={Target}
             color="blue"
             subtitle={`${drawdownAnalysis.drawdownPeriods.filter(d => d.isRecovered).length} recovered`}
+            tooltip="Average number of trading days needed to recover from drawdowns back to previous highs. Shorter recovery times indicate better resilience and risk management. Aim for under 30 days."
           />
           <StatCard
             title="Avg Risk:Reward"
@@ -136,6 +73,7 @@ export function RiskManagementCharts({ trades }: RiskManagementChartsProps) {
             icon={DollarSign}
             color={riskRewardAnalysis.avgRatio >= 2 ? "green" : riskRewardAnalysis.avgRatio >= 1 ? "yellow" : "red"}
             subtitle={`Median: ${formatNumber(riskRewardAnalysis.medianRatio)}`}
+            tooltip="Average ratio of profit to loss across all trades. Values above 2.0 are excellent, 1.0-2.0 are good, below 1.0 indicate poor risk management. Compare with your required threshold for profitability."
           />
         </div>
       </div>
@@ -144,14 +82,19 @@ export function RiskManagementCharts({ trades }: RiskManagementChartsProps) {
       {drawdownChartData.length > 0 && (
         <div className='grid grid-cols-1 lg:grid-cols-2 gap-6'>
           <div className='card'>
-            <h3 className='text-lg font-semibold text-gray-900 mb-4'>Drawdown Amounts</h3>
+            <h3 className='text-lg font-semibold text-gray-900 mb-4 flex items-center'>
+              Drawdown Amounts
+              <InfoTooltip content="Shows the absolute dollar amount lost during each drawdown period. Darker red bars indicate drawdowns that haven't been recovered yet. Helps identify your worst losing streaks and their severity." id="drawdown-amounts">
+                <Info className="w-4 h-4 text-gray-400 ml-2 hover:text-gray-600" />
+              </InfoTooltip>
+            </h3>
             <div className='h-64'>
-              <ResponsiveContainer width='100%' height='100%'>
-                <BarChart data={drawdownChartData}>
+              <ResponsiveContainer width='100%' height='100%' >
+                <BarChart data={drawdownChartData} margin={{ left: 20 }}>
                   <CartesianGrid strokeDasharray='3 3' />
                   <XAxis dataKey='period' />
-                  <YAxis tickFormatter={(value) => formatCurrency(value)} />
-                  <Tooltip content={<CustomTooltip />} />
+                  <YAxis tickFormatter={(value) => formatCompactCurrency(value)} />
+                  <Tooltip content={<CustomTooltip formatters={{ currency: 'compact' }} />} />
                   <Bar dataKey='drawdownAmount' name='Drawdown Amount'>
                     {drawdownChartData.map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={entry.isRecovered ? "#EF4444" : "#DC2626"} />
@@ -163,14 +106,19 @@ export function RiskManagementCharts({ trades }: RiskManagementChartsProps) {
           </div>
 
           <div className='card'>
-            <h3 className='text-lg font-semibold text-gray-900 mb-4'>Drawdown Duration vs Recovery</h3>
+            <h3 className='text-lg font-semibold text-gray-900 mb-4 flex items-center'>
+              Drawdown Duration vs Recovery
+              <InfoTooltip content="Compares how long you stayed in drawdown (red bars) versus how long it took to recover (green bars). Shorter recovery times indicate better resilience and risk management. Only shows recovered drawdowns." id="drawdown-recovery">
+                <Info className="w-4 h-4 text-gray-400 ml-2 hover:text-gray-600" />
+              </InfoTooltip>
+            </h3>
             <div className='h-64'>
               <ResponsiveContainer width='100%' height='100%'>
                 <BarChart data={drawdownChartData.filter(d => d.isRecovered)}>
                   <CartesianGrid strokeDasharray='3 3' />
                   <XAxis dataKey='period' />
                   <YAxis />
-                  <Tooltip content={<CustomTooltip />} />
+                  <Tooltip content={<CustomTooltip formatters={{ currency: 'compact' }} />} />
                   <Bar dataKey='durationDays' fill='#EF4444' name='Drawdown Days' />
                   <Bar dataKey='recoveryDays' fill='#10B981' name='Recovery Days' />
                   <Legend />
@@ -185,7 +133,12 @@ export function RiskManagementCharts({ trades }: RiskManagementChartsProps) {
       {riskRewardAnalysis.ratioDistribution.length > 0 && (
         <div className='grid grid-cols-1 lg:grid-cols-2 gap-6'>
           <div className='card'>
-            <h3 className='text-lg font-semibold text-gray-900 mb-4'>Risk:Reward Ratio Distribution</h3>
+            <h3 className='text-lg font-semibold text-gray-900 mb-4 flex items-center'>
+              Risk:Reward Ratio Distribution
+              <InfoTooltip content="Shows how your trades are distributed across different risk-reward ratios. Aim for more trades in the >2.0 range (green/blue sections). Ratios >3.0 are exceptional, while <1.0 indicate poor risk management." id="risk-reward-distribution">
+                <Info className="w-4 h-4 text-gray-400 ml-2 hover:text-gray-600" />
+              </InfoTooltip>
+            </h3>
             <div className='h-64'>
               <ResponsiveContainer width='100%' height='100%'>
                 <PieChart>
@@ -199,7 +152,7 @@ export function RiskManagementCharts({ trades }: RiskManagementChartsProps) {
                     fill='#8884d8'
                     dataKey='count'
                   >
-                    {riskRewardAnalysis.ratioDistribution.map((entry, index) => (
+                    {riskRewardAnalysis.ratioDistribution.map((_, index) => (
                       <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                     ))}
                   </Pie>
@@ -210,7 +163,12 @@ export function RiskManagementCharts({ trades }: RiskManagementChartsProps) {
           </div>
 
           <div className='card'>
-            <h3 className='text-lg font-semibold text-gray-900 mb-4'>Risk:Reward Analysis</h3>
+            <h3 className='text-lg font-semibold text-gray-900 mb-4 flex items-center'>
+              Risk:Reward Analysis
+              <InfoTooltip content="Key risk-reward metrics for your trading. Average ratio shows overall performance, median is less affected by outliers. The breakeven threshold shows the minimum ratio needed for profitability given your win rate." id="risk-reward-analysis">
+                <Info className="w-4 h-4 text-gray-400 ml-2 hover:text-gray-600" />
+              </InfoTooltip>
+            </h3>
             <div className='space-y-4'>
               <div className='bg-blue-50 rounded-lg p-4'>
                 <h4 className='font-semibold text-blue-900 mb-2'>Key Metrics</h4>
@@ -244,15 +202,20 @@ export function RiskManagementCharts({ trades }: RiskManagementChartsProps) {
       {/* Position Size Analysis */}
       {positionSizeAnalysis.sizeRanges.length > 0 && (
         <div className='card'>
-          <h3 className='text-lg font-semibold text-gray-900 mb-4'>Position Size Analysis</h3>
+          <h3 className='text-lg font-semibold text-gray-900 mb-4 flex items-center'>
+            Position Size Analysis
+            <InfoTooltip content="Analyzes how your position sizes correlate with performance. The chart shows average P&L by position size range. The correlation value indicates if larger positions tend to be more (+) or less (-) profitable." id="position-size-analysis">
+              <Info className="w-4 h-4 text-gray-400 ml-2 hover:text-gray-600" />
+            </InfoTooltip>
+          </h3>
           <div className='grid grid-cols-1 lg:grid-cols-2 gap-6'>
             <div className='h-64'>
               <ResponsiveContainer width='100%' height='100%'>
-                <BarChart data={positionSizeAnalysis.sizeRanges}>
+                <BarChart data={positionSizeAnalysis.sizeRanges} margin={{ left: 20, bottom: 30 }}>
                   <CartesianGrid strokeDasharray='3 3' />
                   <XAxis dataKey='range' angle={-45} textAnchor='end' height={80} />
-                  <YAxis tickFormatter={(value) => formatCurrency(value)} />
-                  <Tooltip content={<CustomTooltip />} />
+                  <YAxis tickFormatter={(value) => formatCompactCurrency(value)} />
+                  <Tooltip content={<CustomTooltip formatters={{ currency: 'compact' }} />} />
                   <Bar dataKey='avgPnL' name='Average P&L'>
                     {positionSizeAnalysis.sizeRanges.map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={entry.avgPnL >= 0 ? "#10B981" : "#EF4444"} />
@@ -287,6 +250,19 @@ export function RiskManagementCharts({ trades }: RiskManagementChartsProps) {
           </div>
         </div>
       )}
+
+      {/* AI Recommendations */}
+      <AIRecommendations
+        trades={trades}
+        analysisData={{
+          drawdownAnalysis,
+          riskRewardAnalysis,
+          positionSizeAnalysis
+        }}
+        pageContext="risk-management"
+        pageTitle="Risk Management Analysis"
+        dataDescription="position sizing and risk control strategies data"
+      />
     </div>
   )
 }

@@ -1,8 +1,12 @@
-import React, { useMemo } from 'react';
-import { format, startOfWeek, startOfMonth, endOfWeek, endOfMonth, eachDayOfInterval } from 'date-fns';
-import { TrendingUp, TrendingDown, DollarSign, Target, Award, AlertTriangle } from 'lucide-react';
-import { Trade, DailyPnL, TradeStatistics } from '../types/trade';
+import { useMemo } from 'react';
+import { format, startOfWeek, startOfMonth } from 'date-fns';
+import { TrendingUp, TrendingDown, DollarSign, Target, Award, Info } from 'lucide-react';
+import { Trade, TradeStatistics } from '../types/trade';
 import { calculateDailyPnL, calculateTradeStatistics } from '../utils/calculations';
+import { InfoTooltip } from './InfoTooltip';
+import { AIRecommendations } from './AIRecommendations';
+import { formatCurrency, formatPercentage } from '../utils/formatters';
+import { StatCard } from './StatCard';
 
 interface PnLDashboardProps {
   trades: Trade[];
@@ -11,19 +15,6 @@ interface PnLDashboardProps {
 export function PnLDashboard({ trades }: PnLDashboardProps) {
   const dailyPnL = useMemo(() => calculateDailyPnL(trades), [trades]);
   const statistics = useMemo(() => calculateTradeStatistics(trades), [trades]);
-
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0
-    }).format(value);
-  };
-
-  const formatPercentage = (value: number) => {
-    return `${value.toFixed(1)}%`;
-  };
 
   // Calculate weekly and monthly aggregations
   const weeklyPnL = useMemo(() => {
@@ -69,46 +60,10 @@ export function PnLDashboard({ trades }: PnLDashboardProps) {
     dailyPnL[0] || { netPnL: 0, date: new Date() }
   );
 
-  const worstDay = dailyPnL.reduce((worst, day) => 
-    day.netPnL < worst.netPnL ? day : worst, 
+  const worstDay = dailyPnL.reduce((worst, day) =>
+    day.netPnL < worst.netPnL ? day : worst,
     dailyPnL[0] || { netPnL: 0, date: new Date() }
   );
-
-  const StatCard = ({ 
-    title, 
-    value, 
-    icon: Icon, 
-    color = 'blue',
-    subtitle 
-  }: { 
-    title: string; 
-    value: string | number; 
-    icon: React.ElementType; 
-    color?: 'blue' | 'green' | 'red' | 'yellow';
-    subtitle?: string;
-  }) => {
-    const colorClasses = {
-      blue: 'bg-blue-50 text-blue-600',
-      green: 'bg-green-50 text-green-600',
-      red: 'bg-red-50 text-red-600',
-      yellow: 'bg-yellow-50 text-yellow-600'
-    };
-
-    return (
-      <div className="card">
-        <div className="flex items-center">
-          <div className={`p-2 rounded-lg ${colorClasses[color]}`}>
-            <Icon className="w-6 h-6" />
-          </div>
-          <div className="ml-4">
-            <p className="text-sm font-medium text-gray-500">{title}</p>
-            <p className="text-2xl font-bold text-gray-900">{value}</p>
-            {subtitle && <p className="text-xs text-gray-500">{subtitle}</p>}
-          </div>
-        </div>
-      </div>
-    );
-  };
 
   return (
     <div className="space-y-6">
@@ -119,24 +74,32 @@ export function PnLDashboard({ trades }: PnLDashboardProps) {
           value={formatCurrency(statistics.netPnL)}
           icon={DollarSign}
           color={statistics.netPnL >= 0 ? 'green' : 'red'}
+          tooltip="Your total profit or loss after deducting all costs including brokerage, taxes, and charges. This is your actual money made or lost from trading."
+          variant="compact"
         />
         <StatCard
           title="Win Rate"
           value={formatPercentage(statistics.winRate)}
           icon={Target}
           color={statistics.winRate >= 60 ? 'green' : statistics.winRate >= 40 ? 'yellow' : 'red'}
+          tooltip="Percentage of profitable trades out of total trades. A higher win rate is good, but it should be balanced with average win/loss amounts. Even 40-50% win rate can be profitable with proper risk management."
+          variant="compact"
         />
         <StatCard
           title="Profit Factor"
           value={statistics.profitFactor.toFixed(2)}
           icon={Award}
           color={statistics.profitFactor >= 2 ? 'green' : statistics.profitFactor >= 1 ? 'yellow' : 'red'}
+          tooltip="Ratio of total profits to total losses. Values above 1.0 indicate profitability. 1.5-2.0 is good, 2.0+ is excellent. This metric combines both win rate and average win/loss size."
+          variant="compact"
         />
         <StatCard
           title="Total Trades"
           value={statistics.totalTrades}
           icon={TrendingUp}
           color="blue"
+          tooltip="Total number of completed positions (not individual buy/sell executions). Each position represents one complete trade cycle from entry to exit."
+          variant="compact"
         />
       </div>
 
@@ -145,28 +108,58 @@ export function PnLDashboard({ trades }: PnLDashboardProps) {
         <div className="card">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Trading Performance</h3>
           <div className="space-y-3">
-            <div className="flex justify-between">
-              <span className="text-gray-600">Winning Trades</span>
+            <div className="flex justify-between items-center">
+              <div className="flex items-center">
+                <span className="text-gray-600">Winning Trades</span>
+                <InfoTooltip content="Number of profitable positions. This counts completed positions, not individual buy/sell executions." id="winning-trades">
+                  <Info className="w-4 h-4 text-gray-400 ml-1 hover:text-gray-600" />
+                </InfoTooltip>
+              </div>
               <span className="font-medium text-green-600">{statistics.winningTrades}</span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-gray-600">Losing Trades</span>
+            <div className="flex justify-between items-center">
+              <div className="flex items-center">
+                <span className="text-gray-600">Losing Trades</span>
+                <InfoTooltip content="Number of loss-making positions. Focus on keeping this number manageable through proper risk management." id="losing-trades">
+                  <Info className="w-4 h-4 text-gray-400 ml-1 hover:text-gray-600" />
+                </InfoTooltip>
+              </div>
               <span className="font-medium text-red-600">{statistics.losingTrades}</span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-gray-600">Average Win</span>
+            <div className="flex justify-between items-center">
+              <div className="flex items-center">
+                <span className="text-gray-600">Average Win</span>
+                <InfoTooltip content="Average profit per winning trade. Higher values indicate better profit capture. Compare this with your average loss to assess risk-reward ratio." id="avg-win">
+                  <Info className="w-4 h-4 text-gray-400 ml-1 hover:text-gray-600" />
+                </InfoTooltip>
+              </div>
               <span className="font-medium text-green-600">{formatCurrency(statistics.avgWin)}</span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-gray-600">Average Loss</span>
+            <div className="flex justify-between items-center">
+              <div className="flex items-center">
+                <span className="text-gray-600">Average Loss</span>
+                <InfoTooltip content="Average loss per losing trade. Keep this controlled through stop losses. Ideally, your average win should be larger than your average loss." id="avg-loss">
+                  <Info className="w-4 h-4 text-gray-400 ml-1 hover:text-gray-600" />
+                </InfoTooltip>
+              </div>
               <span className="font-medium text-red-600">{formatCurrency(statistics.avgLoss)}</span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-gray-600">Largest Win</span>
+            <div className="flex justify-between items-center">
+              <div className="flex items-center">
+                <span className="text-gray-600">Largest Win</span>
+                <InfoTooltip content="Your biggest single trade profit. While good, don't rely on occasional big wins. Consistent smaller wins are more sustainable." id="max-win">
+                  <Info className="w-4 h-4 text-gray-400 ml-1 hover:text-gray-600" />
+                </InfoTooltip>
+              </div>
               <span className="font-medium text-green-600">{formatCurrency(statistics.maxWin)}</span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-gray-600">Largest Loss</span>
+            <div className="flex justify-between items-center">
+              <div className="flex items-center">
+                <span className="text-gray-600">Largest Loss</span>
+                <InfoTooltip content="Your biggest single trade loss. This should be controlled through proper position sizing and stop losses. Large losses can wipe out many small wins." id="max-loss">
+                  <Info className="w-4 h-4 text-gray-400 ml-1 hover:text-gray-600" />
+                </InfoTooltip>
+              </div>
               <span className="font-medium text-red-600">{formatCurrency(statistics.maxLoss)}</span>
             </div>
           </div>
@@ -175,22 +168,42 @@ export function PnLDashboard({ trades }: PnLDashboardProps) {
         <div className="card">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Financial Summary</h3>
           <div className="space-y-3">
-            <div className="flex justify-between">
-              <span className="text-gray-600">Gross Turnover</span>
+            <div className="flex justify-between items-center">
+              <div className="flex items-center">
+                <span className="text-gray-600">Gross Turnover</span>
+                <InfoTooltip content="Total value of all trades executed (buy + sell values). This represents your total trading volume and is used to calculate brokerage charges." id="gross-turnover">
+                  <Info className="w-4 h-4 text-gray-400 ml-1 hover:text-gray-600" />
+                </InfoTooltip>
+              </div>
               <span className="font-medium">{formatCurrency(statistics.grossTurnover)}</span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-gray-600">Total Brokerage</span>
+            <div className="flex justify-between items-center">
+              <div className="flex items-center">
+                <span className="text-gray-600">Total Brokerage</span>
+                <InfoTooltip content="All trading costs including brokerage, STT, exchange charges, GST, SEBI charges, and stamp duty. These costs reduce your net profit." id="total-brokerage">
+                  <Info className="w-4 h-4 text-gray-400 ml-1 hover:text-gray-600" />
+                </InfoTooltip>
+              </div>
               <span className="font-medium text-red-600">{formatCurrency(statistics.totalBrokerage)}</span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-gray-600">Realized P&L</span>
+            <div className="flex justify-between items-center">
+              <div className="flex items-center">
+                <span className="text-gray-600">Realized P&L</span>
+                <InfoTooltip content="Profit or loss from your trading before deducting brokerage and other charges. This is your gross trading performance." id="realized-pnl">
+                  <Info className="w-4 h-4 text-gray-400 ml-1 hover:text-gray-600" />
+                </InfoTooltip>
+              </div>
               <span className={`font-medium ${statistics.totalPnL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                 {formatCurrency(statistics.totalPnL)}
               </span>
             </div>
-            <div className="flex justify-between border-t pt-2">
-              <span className="text-gray-900 font-medium">Net P&L</span>
+            <div className="flex justify-between items-center border-t pt-2">
+              <div className="flex items-center">
+                <span className="text-gray-900 font-medium">Net P&L</span>
+                <InfoTooltip content="Your final profit or loss after all costs. This is the actual money you made or lost. Focus on keeping this positive consistently." id="net-pnl">
+                  <Info className="w-4 h-4 text-gray-400 ml-1 hover:text-gray-600" />
+                </InfoTooltip>
+              </div>
               <span className={`font-bold ${statistics.netPnL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                 {formatCurrency(statistics.netPnL)}
               </span>
@@ -206,6 +219,9 @@ export function PnLDashboard({ trades }: PnLDashboardProps) {
             <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
               <TrendingUp className="w-5 h-5 text-green-600 mr-2" />
               Best Trading Day
+              <InfoTooltip content="Your most profitable single trading day. Analyze what went right on this day - market conditions, strategy, timing, and mindset." id="best-day">
+                <Info className="w-4 h-4 text-gray-400 ml-2 hover:text-gray-600" />
+              </InfoTooltip>
             </h3>
             <div className="space-y-2">
               <div className="text-2xl font-bold text-green-600">
@@ -224,6 +240,9 @@ export function PnLDashboard({ trades }: PnLDashboardProps) {
             <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
               <TrendingDown className="w-5 h-5 text-red-600 mr-2" />
               Worst Trading Day
+              <InfoTooltip content="Your worst loss in a single trading day. Learn from this day - what went wrong? Overtrading, revenge trading, ignoring stops, or bad market conditions?" id="worst-day">
+                <Info className="w-4 h-4 text-gray-400 ml-2 hover:text-gray-600" />
+              </InfoTooltip>
             </h3>
             <div className="space-y-2">
               <div className="text-2xl font-bold text-red-600">
@@ -243,7 +262,12 @@ export function PnLDashboard({ trades }: PnLDashboardProps) {
       {/* Monthly Performance */}
       {monthlyPnL.length > 0 && (
         <div className="card">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Monthly Performance</h3>
+          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+            Monthly Performance
+            <InfoTooltip content="Track your consistency month by month. Look for patterns - are you more profitable in certain months? Consistent monthly profits indicate a robust trading strategy." id="monthly-performance">
+              <Info className="w-4 h-4 text-gray-400 ml-2 hover:text-gray-600" />
+            </InfoTooltip>
+          </h3>
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
@@ -285,6 +309,21 @@ export function PnLDashboard({ trades }: PnLDashboardProps) {
           </div>
         </div>
       )}
+
+      {/* AI Recommendations */}
+      <AIRecommendations
+        trades={trades}
+        analysisData={{
+          statistics,
+          dailyPnL,
+          monthlyPnL,
+          bestDay,
+          worstDay
+        }}
+        pageContext="dashboard"
+        pageTitle="Trading Dashboard"
+        dataDescription="overall trading performance and portfolio health data"
+      />
     </div>
   );
 }

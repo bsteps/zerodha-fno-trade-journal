@@ -1,8 +1,12 @@
-import React, { useMemo } from "react"
-import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from "recharts"
+import { Activity, Calendar, Clock, TrendingUp } from "lucide-react"
+import { useMemo } from "react"
+import { Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, PolarAngleAxis, PolarGrid, PolarRadiusAxis, Radar, RadarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts"
 import { Trade } from "../types/trade"
-import { calculateDayOfWeekAnalysis, calculateMarketSessionAnalysis, calculateVolatilityAnalysis, DayOfWeekAnalysis, MarketSessionAnalysis, VolatilityAnalysis } from "../utils/calculations"
-import { Clock, Calendar, TrendingUp, Activity } from "lucide-react"
+import { calculateDayOfWeekAnalysis, calculateMarketSessionAnalysis, calculateVolatilityAnalysis } from "../utils/calculations"
+import { AIRecommendations } from './AIRecommendations'
+import { StatCard } from './StatCard'
+import { CustomTooltip } from './CustomTooltip'
+import { formatCurrency, formatNumber, formatPercentage } from '../utils/formatters'
 
 interface MarketTimingChartsProps {
   trades: Trade[]
@@ -15,78 +19,7 @@ export function MarketTimingCharts({ trades }: MarketTimingChartsProps) {
   const marketSessionAnalysis = useMemo(() => calculateMarketSessionAnalysis(trades), [trades])
   const volatilityAnalysis = useMemo(() => calculateVolatilityAnalysis(trades), [trades])
 
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0
-    }).format(value)
-  }
 
-  const formatNumber = (value: number) => {
-    return new Intl.NumberFormat('en-IN', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2
-    }).format(value)
-  }
-
-  const formatPercentage = (value: number) => {
-    return `${formatNumber(value)}%`
-  }
-
-  // Custom tooltip component
-  const CustomTooltip = ({ active, payload, label }: any) => {
-    if (active && payload && payload.length) {
-      return (
-        <div className='bg-white p-3 border border-gray-300 rounded-lg shadow-lg'>
-          <p className='text-gray-900 font-medium'>{label}</p>
-          {payload.map((entry: any, index: number) => (
-            <p key={index} style={{ color: entry.color }}>
-              {`${entry.name}: ${
-                entry.name.includes('P&L') || entry.name.includes('Avg')
-                  ? formatCurrency(entry.value)
-                  : entry.name.includes('%') || entry.name.includes('Rate')
-                  ? formatPercentage(entry.value)
-                  : formatNumber(entry.value)
-              }`}
-            </p>
-          ))}
-        </div>
-      )
-    }
-    return null
-  }
-
-  // Stat card component
-  const StatCard = ({ title, value, icon: Icon, color, subtitle }: {
-    title: string
-    value: string | number
-    icon: any
-    color: 'red' | 'green' | 'blue' | 'yellow' | 'gray'
-    subtitle?: string
-  }) => {
-    const colorClasses = {
-      red: 'bg-red-50 text-red-700 border-red-200',
-      green: 'bg-green-50 text-green-700 border-green-200',
-      blue: 'bg-blue-50 text-blue-700 border-blue-200',
-      yellow: 'bg-yellow-50 text-yellow-700 border-yellow-200',
-      gray: 'bg-gray-50 text-gray-700 border-gray-200'
-    }
-
-    return (
-      <div className={`card border-l-4 ${colorClasses[color]}`}>
-        <div className='flex items-center justify-between'>
-          <div>
-            <p className='text-sm font-medium opacity-75'>{title}</p>
-            <p className='text-2xl font-bold'>{value}</p>
-            {subtitle && <p className='text-xs opacity-60 mt-1'>{subtitle}</p>}
-          </div>
-          <Icon className='w-8 h-8 opacity-50' />
-        </div>
-      </div>
-    )
-  }
 
   // Find best performing day and session
   const bestDay = dayOfWeekAnalysis.reduce((best, day) => 
@@ -310,6 +243,19 @@ export function MarketTimingCharts({ trades }: MarketTimingChartsProps) {
           </div>
         </div>
       )}
+
+      {/* AI Recommendations */}
+      <AIRecommendations
+        trades={trades}
+        analysisData={{
+          dayOfWeekAnalysis,
+          marketSessionAnalysis,
+          volatilityAnalysis
+        }}
+        pageContext="market-timing"
+        pageTitle="Market Timing Analysis"
+        dataDescription="entry/exit timing and market condition analysis data"
+      />
     </div>
   )
 }

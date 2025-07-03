@@ -121,63 +121,169 @@ export function calculateBrokerageCharges(
   };
 }
 
-export function calculatePositions(trades: Trade[]): Position[] {
-  const positionMap = new Map<string, Position>();
+// Enhanced Position interface for proper position tracking
+interface EnhancedPosition extends Position {
+  positionId: string;
+  openTime: Date;
+  closeTime?: Date;
+  entryPrice: number;
+  exitPrice?: number;
+  maxQuantity: number;
+  remainingQuantity: number;
+}
 
-  trades.forEach(trade => {
-    const key = `${trade.symbol}_${format(trade.expiryDate, 'yyyy-MM-dd')}`;
-    
-    if (!positionMap.has(key)) {
-      positionMap.set(key, {
-        symbol: trade.symbol,
-        instrumentType: trade.instrumentType,
-        strikePrice: trade.strikePrice,
-        expiryDate: trade.expiryDate,
-        netQuantity: 0,
-        avgBuyPrice: 0,
-        avgSellPrice: 0,
-        totalBuyValue: 0,
-        totalSellValue: 0,
-        realizedPnL: 0,
-        unrealizedPnL: 0,
-        status: 'open',
-        trades: []
-      });
+export function calculatePositions(trades: Trade[]): EnhancedPosition[] {
+  // Sort trades by execution time to process them chronologically
+  const sortedTrades = [...trades].sort((a, b) =>
+    a.orderExecutionTime.getTime() - b.orderExecutionTime.getTime()
+  );
+
+  const positions: EnhancedPosition[] = [];
+  const openPositions = new Map<string, EnhancedPosition[]>(); // symbol -> array of open positions
+
+  sortedTrades.forEach(trade => {
+    const instrumentKey = `${trade.symbol}_${trade.instrumentType}_${trade.strikePrice || 0}_${format(trade.expiryDate, 'yyyy-MM-dd')}`;
+
+    if (!openPositions.has(instrumentKey)) {
+      openPositions.set(instrumentKey, []);
     }
 
-    const position = positionMap.get(key)!;
-    position.trades.push(trade);
+    const instrumentPositions = openPositions.get(instrumentKey)!;
 
     if (trade.tradeType === 'buy') {
-      position.totalBuyValue += trade.value;
-      position.netQuantity += trade.quantity;
-    } else {
-      position.totalSellValue += trade.value;
-      position.netQuantity -= trade.quantity;
+      // First check if this buy trade closes any existing short positions
+      const shortPositions = instrumentPositions.filter(p => p.netQuantity < 0 && p.remainingQuantity > 0);
+      let remainingQuantity = trade.quantity;
+
+      // Close short positions first (FIFO)
+      for (const position of shortPositions) {
+        if (position.remainingQuantity > 0 && remainingQuantity > 0) {
+          const quantityToClose = Math.min(position.remainingQuantity, remainingQuantity);
+
+          // Update position
+          position.trades.push(trade);
+          position.totalBuyValue += (quantityToClose / trade.quantity) * trade.value;
+          position.remainingQuantity -= quantityToClose;
+
+          // Calculate realized P&L for short position (sell price - buy price)
+          const realizedPnL = quantityToClose * (position.entryPrice - trade.price);
+          position.realizedPnL += realizedPnL;
+
+          if (position.remainingQuantity === 0) {
+            // Position fully closed
+            position.status = 'closed';
+            position.closeTime = trade.orderExecutionTime;
+            position.exitPrice = trade.price;
+            position.netQuantity = 0;
+            position.avgBuyPrice = position.totalBuyValue / position.maxQuantity;
+          } else {
+            // Position partially closed
+            position.netQuantity = -position.remainingQuantity;
+          }
+
+          remainingQuantity -= quantityToClose;
+        }
+      }
+
+      // If there's remaining quantity after closing shorts, open a new long position
+      if (remainingQuantity > 0) {
+        const newPosition: EnhancedPosition = {
+          positionId: `${instrumentKey}_${trade.orderExecutionTime.getTime()}_${Math.random().toString(36).substring(2, 11)}`,
+          symbol: trade.symbol,
+          instrumentType: trade.instrumentType,
+          strikePrice: trade.strikePrice,
+          expiryDate: trade.expiryDate,
+          netQuantity: remainingQuantity,
+          avgBuyPrice: trade.price,
+          avgSellPrice: 0,
+          totalBuyValue: (remainingQuantity / trade.quantity) * trade.value,
+          totalSellValue: 0,
+          realizedPnL: 0,
+          unrealizedPnL: 0,
+          status: 'open',
+          trades: [trade],
+          openTime: trade.orderExecutionTime,
+          entryPrice: trade.price,
+          maxQuantity: remainingQuantity,
+          remainingQuantity: remainingQuantity
+        };
+
+        instrumentPositions.push(newPosition);
+        positions.push(newPosition);
+      }
+
+      // Remove fully closed positions from open positions
+      openPositions.set(instrumentKey, instrumentPositions.filter(p => p.remainingQuantity > 0));
+
+    } else if (trade.tradeType === 'sell') {
+      // First check if this sell trade closes any existing long positions
+      const longPositions = instrumentPositions.filter(p => p.netQuantity > 0 && p.remainingQuantity > 0);
+      let remainingQuantity = trade.quantity;
+
+      // Close long positions first (FIFO)
+      for (const position of longPositions) {
+        if (position.remainingQuantity > 0 && remainingQuantity > 0) {
+          const quantityToClose = Math.min(position.remainingQuantity, remainingQuantity);
+
+          // Update position
+          position.trades.push(trade);
+          position.totalSellValue += (quantityToClose / trade.quantity) * trade.value;
+          position.remainingQuantity -= quantityToClose;
+
+          // Calculate realized P&L for long position (sell price - buy price)
+          const realizedPnL = quantityToClose * (trade.price - position.entryPrice);
+          position.realizedPnL += realizedPnL;
+
+          if (position.remainingQuantity === 0) {
+            // Position fully closed
+            position.status = 'closed';
+            position.closeTime = trade.orderExecutionTime;
+            position.exitPrice = trade.price;
+            position.netQuantity = 0;
+            position.avgSellPrice = position.totalSellValue / position.maxQuantity;
+          } else {
+            // Position partially closed
+            position.netQuantity = position.remainingQuantity;
+          }
+
+          remainingQuantity -= quantityToClose;
+        }
+      }
+
+      // If there's remaining quantity after closing longs, open a new short position
+      if (remainingQuantity > 0) {
+        const newPosition: EnhancedPosition = {
+          positionId: `${instrumentKey}_${trade.orderExecutionTime.getTime()}_${Math.random().toString(36).substring(2, 11)}`,
+          symbol: trade.symbol,
+          instrumentType: trade.instrumentType,
+          strikePrice: trade.strikePrice,
+          expiryDate: trade.expiryDate,
+          netQuantity: -remainingQuantity,
+          avgBuyPrice: 0,
+          avgSellPrice: trade.price,
+          totalBuyValue: 0,
+          totalSellValue: (remainingQuantity / trade.quantity) * trade.value,
+          realizedPnL: 0,
+          unrealizedPnL: 0,
+          status: 'open',
+          trades: [trade],
+          openTime: trade.orderExecutionTime,
+          entryPrice: trade.price,
+          maxQuantity: remainingQuantity,
+          remainingQuantity: remainingQuantity
+        };
+
+        instrumentPositions.push(newPosition);
+        positions.push(newPosition);
+      }
+
+      // Remove fully closed positions from open positions
+      openPositions.set(instrumentKey, instrumentPositions.filter(p => p.remainingQuantity > 0));
     }
   });
 
-  // Calculate averages and P&L
-  positionMap.forEach(position => {
-    const buyTrades = position.trades.filter(t => t.tradeType === 'buy');
-    const sellTrades = position.trades.filter(t => t.tradeType === 'sell');
-    
-    const totalBuyQty = buyTrades.reduce((sum, t) => sum + t.quantity, 0);
-    const totalSellQty = sellTrades.reduce((sum, t) => sum + t.quantity, 0);
-    
-    position.avgBuyPrice = totalBuyQty > 0 ? position.totalBuyValue / totalBuyQty : 0;
-    position.avgSellPrice = totalSellQty > 0 ? position.totalSellValue / totalSellQty : 0;
-    
-    // Calculate realized P&L
-    const closedQuantity = Math.min(totalBuyQty, totalSellQty);
-    if (closedQuantity > 0) {
-      position.realizedPnL = closedQuantity * (position.avgSellPrice - position.avgBuyPrice);
-    }
-    
-    position.status = position.netQuantity === 0 ? 'closed' : 'open';
-  });
-
-  return Array.from(positionMap.values());
+  // Convert enhanced positions back to regular positions
+  return positions;
 }
 
 // Enhanced DailyPnL interface to include both trade-based and order-based win rates
@@ -235,32 +341,53 @@ export function calculateDailyPnL(trades: Trade[]): EnhancedDailyPnL[] {
     }
   });
 
-  // Calculate P&L for each day and determine winning/losing orders and trades
+  // Calculate P&L for each day - distribute across trading days for better performance metrics
   const positions = calculatePositions(trades);
   positions.forEach(position => {
     if (position.status === 'closed' && position.realizedPnL !== 0) {
-      // Find the last trade date for this position
-      const lastTradeDate = position.trades.reduce((latest, trade) =>
-        trade.tradeDate > latest ? trade.tradeDate : latest,
-        position.trades[0].tradeDate
-      );
+      // Get unique trading dates for this position
+      const tradingDates = [...new Set(position.trades.map(trade =>
+        format(startOfDay(trade.tradeDate), 'yyyy-MM-dd')
+      ))].sort();
 
-      const dateKey = format(startOfDay(lastTradeDate), 'yyyy-MM-dd');
-      const daily = dailyMap.get(dateKey);
+      // For intraday positions (same day open/close), assign all P&L to that day
+      if (tradingDates.length === 1) {
+        const dateKey = tradingDates[0];
+        const daily = dailyMap.get(dateKey);
+        if (daily) {
+          daily.realizedPnL += position.realizedPnL;
 
-      if (daily) {
-        daily.realizedPnL += position.realizedPnL;
-
-        // Count winning/losing positions (which represent completed order pairs)
-        if (position.realizedPnL > 0) {
-          daily.winningOrders++;
-          // Count all trades in winning positions as winning trades
-          daily.winningTrades += position.trades.length;
-        } else {
-          daily.losingOrders++;
-          // Count all trades in losing positions as losing trades
-          daily.losingTrades += position.trades.length;
+          // Count winning/losing positions
+          if (position.realizedPnL > 0) {
+            daily.winningOrders++;
+            daily.winningTrades += position.trades.length;
+          } else {
+            daily.losingOrders++;
+            daily.losingTrades += position.trades.length;
+          }
         }
+      } else {
+        // For multi-day positions, distribute P&L evenly across trading days
+        // This provides more realistic daily volatility for performance ratios
+        const pnlPerDay = position.realizedPnL / tradingDates.length;
+
+        tradingDates.forEach((dateKey, index) => {
+          const daily = dailyMap.get(dateKey);
+          if (daily) {
+            daily.realizedPnL += pnlPerDay;
+
+            // Only count the position as won/lost on the final day
+            if (index === tradingDates.length - 1) {
+              if (position.realizedPnL > 0) {
+                daily.winningOrders++;
+                daily.winningTrades += position.trades.length;
+              } else {
+                daily.losingOrders++;
+                daily.losingTrades += position.trades.length;
+              }
+            }
+          }
+        });
       }
     }
   });
@@ -283,6 +410,7 @@ export function calculateDailyPnL(trades: Trade[]): EnhancedDailyPnL[] {
 
 export function calculateTradeStatistics(trades: Trade[]): TradeStatistics {
   const positions = calculatePositions(trades);
+
   const closedPositions = positions.filter(p => p.status === 'closed');
 
   const winningPositions = closedPositions.filter(p => p.realizedPnL > 0);
@@ -621,10 +749,29 @@ export function calculateRiskRewardAnalysis(trades: Trade[]): RiskRewardAnalysis
   const positions = calculatePositions(trades);
   const closedPositions = positions.filter(p => p.status === 'closed' && p.realizedPnL !== 0);
 
+  // Separate winning and losing positions
+  const winningPositions = closedPositions.filter(p => p.realizedPnL > 0);
+  const losingPositions = closedPositions.filter(p => p.realizedPnL < 0);
+
+  // Calculate average win and average loss
+  const avgWin = winningPositions.length > 0
+    ? winningPositions.reduce((sum, p) => sum + p.realizedPnL, 0) / winningPositions.length
+    : 0;
+  const avgLoss = losingPositions.length > 0
+    ? Math.abs(losingPositions.reduce((sum, p) => sum + p.realizedPnL, 0) / losingPositions.length)
+    : 0;
+
+  // For individual ratios, we'll calculate how each trade compares to the average win/loss
   const ratios = closedPositions.map(position => {
-    const profit = Math.max(position.realizedPnL, 0);
-    const loss = Math.abs(Math.min(position.realizedPnL, 0));
-    return loss > 0 ? profit / loss : profit > 0 ? 10 : 0; // Cap at 10 for very small losses
+    if (position.realizedPnL === 0) return 0;
+
+    if (position.realizedPnL > 0) {
+      // For winning trades: this win / average loss (how many average losses this win covers)
+      return avgLoss > 0 ? position.realizedPnL / avgLoss : 1;
+    } else {
+      // For losing trades: average win / this loss (how many of these losses one average win covers)
+      return avgWin > 0 ? avgWin / Math.abs(position.realizedPnL) : 0;
+    }
   }).filter(ratio => ratio > 0);
 
   if (ratios.length === 0) {
@@ -678,7 +825,7 @@ export function calculatePositionSizeAnalysis(trades: Trade[]): PositionSizeAnal
   const positions = calculatePositions(trades);
   const closedPositions = positions.filter(p => p.status === 'closed');
 
-  if (trades.length === 0) {
+  if (closedPositions.length === 0) {
     return {
       sizeRanges: [],
       optimalSizeRange: '',
@@ -686,10 +833,16 @@ export function calculatePositionSizeAnalysis(trades: Trade[]): PositionSizeAnal
     };
   }
 
-  // Define size ranges based on trade value
-  const allValues = trades.map(mt => mt.value);
-  const minValue = Math.min(...allValues);
-  const maxValue = Math.max(...allValues);
+  // Calculate position sizes (use the larger of buy or sell value as position size)
+  const positionSizes = closedPositions.map(p => {
+    const totalBuyValue = Math.abs(p.totalBuyValue);
+    const totalSellValue = Math.abs(p.totalSellValue);
+    return Math.max(totalBuyValue, totalSellValue); // Position size is the larger exposure
+  });
+
+  // Define size ranges based on position sizes (not individual trades)
+  const minValue = Math.min(...positionSizes);
+  const maxValue = Math.max(...positionSizes);
   const range = maxValue - minValue;
 
   const ranges = [
@@ -701,10 +854,9 @@ export function calculatePositionSizeAnalysis(trades: Trade[]): PositionSizeAnal
   ];
 
   const sizeRanges = ranges.map(range => {
-    const tradesInRange = trades.filter(mt => mt.value >= range.min && mt.value <= range.max);
-    const positionsInRange = closedPositions.filter(p => {
-      const tradeValue = p.trades.reduce((sum, t) => sum + t.value, 0);
-      return tradeValue >= range.min && tradeValue <= range.max;
+    const positionsInRange = closedPositions.filter((_, index) => {
+      const positionSize = positionSizes[index];
+      return positionSize >= range.min && positionSize <= range.max;
     });
 
     const avgPnL = positionsInRange.length > 0 ?
@@ -715,7 +867,7 @@ export function calculatePositionSizeAnalysis(trades: Trade[]): PositionSizeAnal
 
     return {
       range: range.label,
-      count: tradesInRange.length,
+      count: positionsInRange.length, // Now correctly counts positions, not trades
       avgPnL,
       winRate
     };
@@ -728,8 +880,8 @@ export function calculatePositionSizeAnalysis(trades: Trade[]): PositionSizeAnal
   );
 
   // Calculate correlation between position size and P&L
-  const sizeAndPnL = closedPositions.map(p => ({
-    size: p.trades.reduce((sum, t) => sum + t.value, 0),
+  const sizeAndPnL = closedPositions.map((p, index) => ({
+    size: positionSizes[index], // Use the correctly calculated position size
     pnl: p.realizedPnL
   }));
 
@@ -788,13 +940,11 @@ export interface MonthlyReturnsHeatmap {
 // Calculate consecutive win/loss streaks
 export function calculateStreakAnalysis(trades: Trade[]): StreakAnalysis {
   const positions = calculatePositions(trades);
-  const closedPositions = positions.filter(p => p.status === 'closed')
+  // Filter out positions with zero P&L and sort chronologically
+  const closedPositions = positions
+    .filter(p => p.status === 'closed' && p.realizedPnL !== 0)
     .sort((a, b) => {
-      const aLastTrade = a.trades.reduce((latest, trade) =>
-        trade.tradeDate > latest ? trade.tradeDate : latest, a.trades[0].tradeDate);
-      const bLastTrade = b.trades.reduce((latest, trade) =>
-        trade.tradeDate > latest ? trade.tradeDate : latest, b.trades[0].tradeDate);
-      return aLastTrade.getTime() - bLastTrade.getTime();
+      return a.openTime.getTime() - b.openTime.getTime();
     });
 
   if (closedPositions.length === 0) {
@@ -883,24 +1033,27 @@ export function calculatePerformanceRatios(trades: Trade[]): PerformanceRatios {
   const stdDev = Math.sqrt(variance);
 
   // Sharpe Ratio (assuming risk-free rate of 0 for simplicity)
-  const sharpeRatio = stdDev > 0 ? (avgDailyReturn * Math.sqrt(252)) / (stdDev * Math.sqrt(252)) : 0;
+  // Annualized Sharpe = (Annualized Return - Risk Free Rate) / Annualized Volatility
+  const annualReturn = avgDailyReturn * 252;
+  const annualVolatility = stdDev * Math.sqrt(252);
+  const sharpeRatio = annualVolatility > 0 ? annualReturn / annualVolatility : 0;
 
   // Calmar Ratio (Annual Return / Max Drawdown)
-  const annualReturn = avgDailyReturn * 252;
   const calmarRatio = drawdownAnalysis.maxDrawdown > 0 ? annualReturn / drawdownAnalysis.maxDrawdown : 0;
 
-  // Sortino Ratio (only considers downside deviation)
-  const negativeReturns = dailyReturns.filter(ret => ret < 0);
-  const downsideVariance = negativeReturns.length > 0
-    ? negativeReturns.reduce((sum, ret) => sum + Math.pow(ret, 2), 0) / negativeReturns.length
+  // Sortino Ratio (only considers downside deviation from mean)
+  const belowMeanReturns = dailyReturns.filter(ret => ret < avgDailyReturn);
+  const downsideVariance = belowMeanReturns.length > 0
+    ? belowMeanReturns.reduce((sum, ret) => sum + Math.pow(ret - avgDailyReturn, 2), 0) / belowMeanReturns.length
     : 0;
   const downsideStdDev = Math.sqrt(downsideVariance);
-  const sortinoRatio = downsideStdDev > 0 ? (avgDailyReturn * Math.sqrt(252)) / (downsideStdDev * Math.sqrt(252)) : 0;
+  const annualDownsideVolatility = downsideStdDev * Math.sqrt(252);
+  const sortinoRatio = annualDownsideVolatility > 0 ? annualReturn / annualDownsideVolatility : 0;
 
-  // Max Drawdown Ratio
-  const maxDrawdownRatio = totalReturn > 0 ? drawdownAnalysis.maxDrawdown / totalReturn : 0;
+  // Max Drawdown Ratio (Max Drawdown as percentage of absolute total return)
+  const maxDrawdownRatio = Math.abs(totalReturn) > 0 ? drawdownAnalysis.maxDrawdown / Math.abs(totalReturn) : 0;
 
-  // Profit to Max Drawdown Ratio
+  // Profit to Max Drawdown Ratio (handles negative returns properly)
   const profitToMaxDrawdownRatio = drawdownAnalysis.maxDrawdown > 0 ? totalReturn / drawdownAnalysis.maxDrawdown : 0;
 
   return {

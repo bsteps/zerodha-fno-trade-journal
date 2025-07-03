@@ -3,6 +3,11 @@ import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, L
 import { Trade } from "../types/trade"
 import { calculateRevengeTradingAnalysis, calculateOvertradingAnalysis, calculateBehavioralPatterns, RevengeTradingAnalysis, OvertradingAnalysis, BehavioralPatterns } from "../utils/calculations"
 import { Brain, AlertTriangle, Clock, TrendingDown } from "lucide-react"
+import { InfoTooltip } from './InfoTooltip'
+import { AIRecommendations } from './AIRecommendations'
+import { formatCurrency, formatNumber, formatPercentage, formatTime } from '../utils/formatters'
+import { CustomTooltip } from './CustomTooltip'
+import { StatCard } from './StatCard'
 
 interface PsychologicalPatternsChartsProps {
   trades: Trade[]
@@ -14,95 +19,6 @@ export function PsychologicalPatternsCharts({ trades }: PsychologicalPatternsCha
   const revengeTradingAnalysis = useMemo(() => calculateRevengeTradingAnalysis(trades), [trades])
   const overtradingAnalysis = useMemo(() => calculateOvertradingAnalysis(trades), [trades])
   const behavioralPatterns = useMemo(() => calculateBehavioralPatterns(trades), [trades])
-
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0
-    }).format(value)
-  }
-
-  const formatNumber = (value: number) => {
-    return new Intl.NumberFormat('en-IN', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2
-    }).format(value)
-  }
-
-  const formatPercentage = (value: number) => {
-    return `${formatNumber(value)}%`
-  }
-
-  const formatTime = (minutes: number) => {
-    if (minutes < 60) {
-      return `${Math.round(minutes)}m`
-    } else if (minutes < 1440) {
-      const hours = Math.floor(minutes / 60)
-      const mins = Math.round(minutes % 60)
-      return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`
-    } else {
-      const days = Math.floor(minutes / 1440)
-      const hours = Math.floor((minutes % 1440) / 60)
-      return hours > 0 ? `${days}d ${hours}h` : `${days}d`
-    }
-  }
-
-  // Custom tooltip component
-  const CustomTooltip = ({ active, payload, label }: any) => {
-    if (active && payload && payload.length) {
-      return (
-        <div className='bg-white p-3 border border-gray-300 rounded-lg shadow-lg'>
-          <p className='text-gray-900 font-medium'>{label}</p>
-          {payload.map((entry: any, index: number) => (
-            <p key={index} style={{ color: entry.color }}>
-              {`${entry.name}: ${
-                entry.name.includes('P&L') || entry.name.includes('Avg')
-                  ? formatCurrency(entry.value)
-                  : entry.name.includes('%') || entry.name.includes('Rate')
-                  ? formatPercentage(entry.value)
-                  : entry.name.includes('Time')
-                  ? formatTime(entry.value)
-                  : formatNumber(entry.value)
-              }`}
-            </p>
-          ))}
-        </div>
-      )
-    }
-    return null
-  }
-
-  // Stat card component
-  const StatCard = ({ title, value, icon: Icon, color, subtitle }: {
-    title: string
-    value: string | number
-    icon: any
-    color: 'red' | 'green' | 'blue' | 'yellow' | 'gray'
-    subtitle?: string
-  }) => {
-    const colorClasses = {
-      red: 'bg-red-50 text-red-700 border-red-200',
-      green: 'bg-green-50 text-green-700 border-green-200',
-      blue: 'bg-blue-50 text-blue-700 border-blue-200',
-      yellow: 'bg-yellow-50 text-yellow-700 border-yellow-200',
-      gray: 'bg-gray-50 text-gray-700 border-gray-200'
-    }
-
-    return (
-      <div className={`card border-l-4 ${colorClasses[color]}`}>
-        <div className='flex items-center justify-between'>
-          <div>
-            <p className='text-sm font-medium opacity-75'>{title}</p>
-            <p className='text-2xl font-bold'>{value}</p>
-            {subtitle && <p className='text-xs opacity-60 mt-1'>{subtitle}</p>}
-          </div>
-          <Icon className='w-8 h-8 opacity-50' />
-        </div>
-      </div>
-    )
-  }
 
   // Prepare comparison data for revenge vs normal trades
   const revengeComparisonData = [
@@ -308,7 +224,7 @@ export function PsychologicalPatternsCharts({ trades }: PsychologicalPatternsCha
                   fill='#8884d8'
                   dataKey='value'
                 >
-                  {emotionalIndicatorsData.map((entry, index) => (
+                  {emotionalIndicatorsData.map((_, index) => (
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                   ))}
                 </Pie>
@@ -423,6 +339,19 @@ export function PsychologicalPatternsCharts({ trades }: PsychologicalPatternsCha
           </div>
         </div>
       </div>
+
+      {/* AI Recommendations */}
+      <AIRecommendations
+        trades={trades}
+        analysisData={{
+          revengeTradingAnalysis,
+          overtradingAnalysis,
+          behavioralPatterns
+        }}
+        pageContext="psychological-patterns"
+        pageTitle="Psychological Patterns Analysis"
+        dataDescription="emotional trading patterns and discipline data"
+      />
     </div>
   )
 }

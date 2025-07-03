@@ -3,6 +3,11 @@ import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, L
 import { Trade } from "../types/trade"
 import { calculateCorrelationMatrix, calculateSectorExposure, calculateCapitalUtilization, CorrelationMatrix, SectorExposure, CapitalUtilization } from "../utils/calculations"
 import { PieChart as PieChartIcon, TrendingUp, DollarSign, Target } from "lucide-react"
+import { InfoTooltip } from './InfoTooltip'
+import { AIRecommendations } from './AIRecommendations'
+import { formatCurrency, formatNumber, formatPercentage } from '../utils/formatters'
+import { CustomTooltip } from './CustomTooltip'
+import { StatCard } from './StatCard'
 
 interface PortfolioAnalyticsChartsProps {
   trades: Trade[]
@@ -14,81 +19,6 @@ export function PortfolioAnalyticsCharts({ trades }: PortfolioAnalyticsChartsPro
   const correlationMatrix = useMemo(() => calculateCorrelationMatrix(trades), [trades])
   const sectorExposure = useMemo(() => calculateSectorExposure(trades), [trades])
   const capitalUtilization = useMemo(() => calculateCapitalUtilization(trades), [trades])
-
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0
-    }).format(value)
-  }
-
-  const formatNumber = (value: number) => {
-    return new Intl.NumberFormat('en-IN', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2
-    }).format(value)
-  }
-
-  const formatPercentage = (value: number) => {
-    return `${formatNumber(value)}%`
-  }
-
-  // Custom tooltip component
-  const CustomTooltip = ({ active, payload, label }: any) => {
-    if (active && payload && payload.length) {
-      return (
-        <div className='bg-white p-3 border border-gray-300 rounded-lg shadow-lg'>
-          <p className='text-gray-900 font-medium'>{label}</p>
-          {payload.map((entry: any, index: number) => (
-            <p key={index} style={{ color: entry.color }}>
-              {`${entry.name}: ${
-                entry.name.includes('P&L') || entry.name.includes('Capital') || entry.name.includes('Size')
-                  ? formatCurrency(entry.value)
-                  : entry.name.includes('%') || entry.name.includes('Rate') || entry.name.includes('Utilization')
-                  ? formatPercentage(entry.value)
-                  : entry.name.includes('Correlation')
-                  ? formatNumber(entry.value)
-                  : formatNumber(entry.value)
-              }`}
-            </p>
-          ))}
-        </div>
-      )
-    }
-    return null
-  }
-
-  // Stat card component
-  const StatCard = ({ title, value, icon: Icon, color, subtitle }: {
-    title: string
-    value: string | number
-    icon: any
-    color: 'red' | 'green' | 'blue' | 'yellow' | 'gray'
-    subtitle?: string
-  }) => {
-    const colorClasses = {
-      red: 'bg-red-50 text-red-700 border-red-200',
-      green: 'bg-green-50 text-green-700 border-green-200',
-      blue: 'bg-blue-50 text-blue-700 border-blue-200',
-      yellow: 'bg-yellow-50 text-yellow-700 border-yellow-200',
-      gray: 'bg-gray-50 text-gray-700 border-gray-200'
-    }
-
-    return (
-      <div className={`card border-l-4 ${colorClasses[color]}`}>
-        <div className='flex items-center justify-between'>
-          <div>
-            <p className='text-sm font-medium opacity-75'>{title}</p>
-            <p className='text-2xl font-bold'>{value}</p>
-            {subtitle && <p className='text-xs opacity-60 mt-1'>{subtitle}</p>}
-          </div>
-          <Icon className='w-8 h-8 opacity-50' />
-        </div>
-      </div>
-    )
-  }
 
   // Calculate portfolio summary stats
   const totalSectors = sectorExposure.length
@@ -171,7 +101,7 @@ export function PortfolioAnalyticsCharts({ trades }: PortfolioAnalyticsChartsPro
                     fill='#8884d8'
                     dataKey='exposurePercentage'
                   >
-                    {sectorExposure.map((entry, index) => (
+                    {sectorExposure.map((_, index) => (
                       <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                     ))}
                   </Pie>
@@ -370,6 +300,19 @@ export function PortfolioAnalyticsCharts({ trades }: PortfolioAnalyticsChartsPro
           </div>
         </div>
       </div>
+
+      {/* AI Recommendations */}
+      <AIRecommendations
+        trades={trades}
+        analysisData={{
+          correlationMatrix,
+          sectorExposure,
+          capitalUtilization
+        }}
+        pageContext="portfolio-analytics"
+        pageTitle="Portfolio Analytics"
+        dataDescription="portfolio diversification and allocation data"
+      />
     </div>
   )
 }

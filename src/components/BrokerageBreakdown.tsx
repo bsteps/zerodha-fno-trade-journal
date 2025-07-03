@@ -2,6 +2,9 @@ import { format } from 'date-fns';
 import { useMemo } from 'react';
 import { Trade } from '../types/trade';
 import { BrokerageCharges, getBrokerageBreakdown } from '../utils/calculations';
+import { InfoTooltip } from './InfoTooltip';
+import { AIRecommendations } from './AIRecommendations';
+import { formatCurrency } from '../utils/formatters';
 
 interface BrokerageBreakdownProps {
   trades: Trade[];
@@ -9,14 +12,6 @@ interface BrokerageBreakdownProps {
 
 export function BrokerageBreakdown({ trades }: BrokerageBreakdownProps) {
   const brokerageData = useMemo(() => getBrokerageBreakdown(trades), [trades]);
-
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-      minimumFractionDigits: 2
-    }).format(value);
-  };
 
   const ChargesTable = ({ charges, title }: { charges: BrokerageCharges; title: string }) => (
     <div className="bg-white rounded-lg shadow p-6">
@@ -221,6 +216,17 @@ export function BrokerageBreakdown({ trades }: BrokerageBreakdownProps) {
           </table>
         </div>
       </div>
+
+      {/* AI Recommendations */}
+      <AIRecommendations
+        trades={trades}
+        analysisData={{
+          brokerageData,
+        }}
+        pageContext="brokerage"
+        pageTitle="Brokerage Analysis"
+        dataDescription="cost analysis and fee optimization data"
+      />
     </div>
   );
 }

@@ -44,6 +44,36 @@ body {
     display: none;  /* Safari and Chrome */
   }
 
+  /* Custom scrollbar for navigation */
+  .nav-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: #cbd5e1 #f8fafc;
+  }
+
+  .nav-scroll::-webkit-scrollbar {
+    height: 6px;
+  }
+
+  .nav-scroll::-webkit-scrollbar-track {
+    background: #f8fafc;
+    border-radius: 3px;
+  }
+
+  .nav-scroll::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 3px;
+    transition: background-color 0.2s ease;
+  }
+
+  .nav-scroll::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+  }
+
+  /* Smooth scrolling for navigation */
+  .nav-scroll {
+    scroll-behavior: smooth;
+  }
+
   .mobile-menu-enter {
     opacity: 0;
     transform: translateY(-10px);
@@ -53,5 +83,88 @@ body {
     opacity: 1;
     transform: translateY(0);
     transition: opacity 200ms ease-out, transform 200ms ease-out;
+  }
+
+  /* Better touch targets for mobile */
+  @media (max-width: 640px) {
+    .nav-button {
+      min-height: 44px;
+      min-width: 44px;
+    }
+  }
+
+  /* Smooth transitions for all interactive elements */
+  button, .nav-scroll {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Focus styles for accessibility */
+  button:focus-visible {
+    outline: 2px solid #3b82f6;
+    outline-offset: 2px;
+  }
+
+  /* Prevent horizontal scroll on mobile */
+  @media (max-width: 640px) {
+    body {
+      overflow-x: hidden;
+    }
+  }
+
+  /* Dropdown animations */
+  .dropdown-enter {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.95);
+  }
+
+  .dropdown-enter-active {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    transition: opacity 150ms ease-out, transform 150ms ease-out;
+  }
+
+  .dropdown-exit {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+
+  .dropdown-exit-active {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.95);
+    transition: opacity 100ms ease-in, transform 100ms ease-in;
+  }
+
+  /* Improved shadow for dropdowns */
+  .dropdown-shadow {
+    box-shadow: 0 10px 25px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  }
+
+  /* Hover improvements for navigation */
+  .nav-dropdown-trigger {
+    position: relative;
+  }
+
+  .nav-dropdown-trigger::after {
+    content: '';
+    position: absolute;
+    bottom: -1px;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: transparent;
+    transition: background-color 0.2s ease;
+  }
+
+  .nav-dropdown-trigger:hover::after {
+    background: rgba(59, 130, 246, 0.1);
+  }
+
+  /* Smooth transitions for dropdown items */
+  .dropdown-item {
+    transition: all 0.15s ease;
+  }
+
+  .dropdown-item:hover {
+    transform: translateX(2px);
   }
 }

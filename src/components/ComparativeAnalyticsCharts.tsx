@@ -3,6 +3,10 @@ import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
 import { Trade } from "../types/trade"
 import { calculateBenchmarkComparison, calculateRollingPerformance, calculatePerformanceRanking, BenchmarkComparison, RollingPerformance, PerformanceRanking } from "../utils/calculations"
 import { TrendingUp, Award, Target, BarChart3 } from "lucide-react"
+import { AIRecommendations } from "./AIRecommendations"
+import { formatCurrency, formatNumber, formatPercentage } from '../utils/formatters'
+import { StatCard } from './StatCard'
+import { CustomTooltip } from './CustomTooltip'
 
 interface ComparativeAnalyticsChartsProps {
   trades: Trade[]
@@ -16,89 +20,12 @@ export function ComparativeAnalyticsCharts({ trades }: ComparativeAnalyticsChart
   const rollingPerformance7D = useMemo(() => calculateRollingPerformance(trades, 7), [trades])
   const performanceRanking = useMemo(() => calculatePerformanceRanking(trades), [trades])
 
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0
-    }).format(value)
-  }
-
-  const formatNumber = (value: number) => {
-    return new Intl.NumberFormat('en-IN', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2
-    }).format(value)
-  }
-
-  const formatPercentage = (value: number) => {
-    return `${formatNumber(value)}%`
-  }
-
-  // Custom tooltip component
-  const CustomTooltip = ({ active, payload, label }: any) => {
-    if (active && payload && payload.length) {
-      return (
-        <div className='bg-white p-3 border border-gray-300 rounded-lg shadow-lg'>
-          <p className='text-gray-900 font-medium'>{label}</p>
-          {payload.map((entry: any, index: number) => (
-            <p key={index} style={{ color: entry.color }}>
-              {`${entry.name}: ${
-                entry.name.includes('Return') || entry.name.includes('Performance') || entry.name.includes('Outperformance')
-                  ? formatPercentage(entry.value)
-                  : entry.name.includes('P&L') || entry.name.includes('Drawdown')
-                  ? formatCurrency(entry.value)
-                  : entry.name.includes('Sharpe') || entry.name.includes('Volatility')
-                  ? formatNumber(entry.value)
-                  : formatNumber(entry.value)
-              }`}
-            </p>
-          ))}
-        </div>
-      )
-    }
-    return null
-  }
-
-  // Stat card component
-  const StatCard = ({ title, value, icon: Icon, color, subtitle }: {
-    title: string
-    value: string | number
-    icon: any
-    color: 'red' | 'green' | 'blue' | 'yellow' | 'gray'
-    subtitle?: string
-  }) => {
-    const colorClasses = {
-      red: 'bg-red-50 text-red-700 border-red-200',
-      green: 'bg-green-50 text-green-700 border-green-200',
-      blue: 'bg-blue-50 text-blue-700 border-blue-200',
-      yellow: 'bg-yellow-50 text-yellow-700 border-yellow-200',
-      gray: 'bg-gray-50 text-gray-700 border-gray-200'
-    }
-
-    return (
-      <div className={`card border-l-4 ${colorClasses[color]}`}>
-        <div className='flex items-center justify-between'>
-          <div>
-            <p className='text-sm font-medium opacity-75'>{title}</p>
-            <p className='text-2xl font-bold'>{value}</p>
-            {subtitle && <p className='text-xs opacity-60 mt-1'>{subtitle}</p>}
-          </div>
-          <Icon className='w-8 h-8 opacity-50' />
-        </div>
-      </div>
-    )
-  }
-
   // Calculate summary statistics
-  const totalOutperformance = benchmarkComparison.length > 0 ? 
-    benchmarkComparison[benchmarkComparison.length - 1].cumulativeOutperformance : 0
+  const totalOutperformance = benchmarkComparison.length > 0 ? benchmarkComparison[benchmarkComparison.length - 1].cumulativeOutperformance : 0
 
-  const avgDailyOutperformance = benchmarkComparison.length > 0 ? 
-    benchmarkComparison.reduce((sum, day) => sum + day.outperformance, 0) / benchmarkComparison.length : 0
+  const avgDailyOutperformance = benchmarkComparison.length > 0 ? benchmarkComparison.reduce((sum, day) => sum + day.outperformance, 0) / benchmarkComparison.length : 0
 
-  const outperformingDays = benchmarkComparison.filter(day => day.outperformance > 0).length
+  const outperformingDays = benchmarkComparison.filter((day) => day.outperformance > 0).length
   const outperformanceRate = benchmarkComparison.length > 0 ? (outperformingDays / benchmarkComparison.length) * 100 : 0
 
   const currentRolling30D = rollingPerformance30D.length > 0 ? rollingPerformance30D[rollingPerformance30D.length - 1] : null
@@ -111,35 +38,23 @@ export function ComparativeAnalyticsCharts({ trades }: ComparativeAnalyticsChart
           <BarChart3 className='w-6 h-6 text-blue-600 mr-2' />
           Comparative Analytics
         </h2>
-        
+
         <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4'>
+          <StatCard title='Total Outperformance' value={formatPercentage(totalOutperformance)} icon={TrendingUp} color={totalOutperformance >= 0 ? "green" : "red"} subtitle='vs Benchmark (cumulative)' />
+          <StatCard title='Daily Outperformance' value={formatPercentage(avgDailyOutperformance)} icon={Target} color={avgDailyOutperformance >= 0 ? "green" : "red"} subtitle='Average daily excess return' />
           <StatCard
-            title="Total Outperformance"
-            value={formatPercentage(totalOutperformance)}
-            icon={TrendingUp}
-            color={totalOutperformance >= 0 ? "green" : "red"}
-            subtitle="vs Benchmark (cumulative)"
-          />
-          <StatCard
-            title="Daily Outperformance"
-            value={formatPercentage(avgDailyOutperformance)}
-            icon={Target}
-            color={avgDailyOutperformance >= 0 ? "green" : "red"}
-            subtitle="Average daily excess return"
-          />
-          <StatCard
-            title="Outperformance Rate"
+            title='Outperformance Rate'
             value={formatPercentage(outperformanceRate)}
             icon={Award}
             color={outperformanceRate >= 50 ? "green" : "yellow"}
             subtitle={`${outperformingDays} out of ${benchmarkComparison.length} days`}
           />
           <StatCard
-            title="30D Rolling Sharpe"
+            title='30D Rolling Sharpe'
             value={currentRolling30D ? formatNumber(currentRolling30D.rollingSharpe) : "N/A"}
             icon={BarChart3}
             color={currentRolling30D && currentRolling30D.rollingSharpe >= 1 ? "green" : "blue"}
-            subtitle="Current 30-day window"
+            subtitle='Current 30-day window'
           />
         </div>
       </div>
@@ -168,7 +83,9 @@ export function ComparativeAnalyticsCharts({ trades }: ComparativeAnalyticsChart
             <h3 className='text-lg font-semibold text-gray-900 mb-4'>Daily Outperformance</h3>
             <div className='h-64'>
               <ResponsiveContainer width='100%' height='100%'>
-                <BarChart data={benchmarkComparison.slice(-30)}> {/* Last 30 days */}
+                <BarChart data={benchmarkComparison.slice(-30)}>
+                  {" "}
+                  {/* Last 30 days */}
                   <CartesianGrid strokeDasharray='3 3' />
                   <XAxis dataKey='date' />
                   <YAxis tickFormatter={(value) => formatPercentage(value)} />
@@ -242,36 +159,28 @@ export function ComparativeAnalyticsCharts({ trades }: ComparativeAnalyticsChart
                 </BarChart>
               </ResponsiveContainer>
             </div>
-            
+
             <div className='space-y-3'>
               {performanceRanking.map((ranking, index) => (
                 <div key={index} className='bg-gray-50 rounded-lg p-4'>
                   <div className='flex items-center justify-between mb-2'>
                     <h4 className='font-semibold text-gray-900'>{ranking.period} Performance</h4>
-                    <span className={`px-2 py-1 rounded text-xs font-bold ${
-                      ranking.isOutperforming ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                    }`}>
-                      {ranking.isOutperforming ? 'Outperforming' : 'Underperforming'}
+                    <span className={`px-2 py-1 rounded text-xs font-bold ${ranking.isOutperforming ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}>
+                      {ranking.isOutperforming ? "Outperforming" : "Underperforming"}
                     </span>
                   </div>
                   <div className='grid grid-cols-2 gap-4 text-sm'>
                     <div>
                       <span className='text-gray-600'>Portfolio:</span>
-                      <div className={`font-bold ${ranking.portfolioReturn >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                        {formatPercentage(ranking.portfolioReturn)}
-                      </div>
+                      <div className={`font-bold ${ranking.portfolioReturn >= 0 ? "text-green-600" : "text-red-600"}`}>{formatPercentage(ranking.portfolioReturn)}</div>
                     </div>
                     <div>
                       <span className='text-gray-600'>Benchmark:</span>
-                      <div className={`font-bold ${ranking.benchmarkReturn >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                        {formatPercentage(ranking.benchmarkReturn)}
-                      </div>
+                      <div className={`font-bold ${ranking.benchmarkReturn >= 0 ? "text-green-600" : "text-red-600"}`}>{formatPercentage(ranking.benchmarkReturn)}</div>
                     </div>
                     <div>
                       <span className='text-gray-600'>Outperformance:</span>
-                      <div className={`font-bold ${ranking.outperformance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                        {formatPercentage(ranking.outperformance)}
-                      </div>
+                      <div className={`font-bold ${ranking.outperformance >= 0 ? "text-green-600" : "text-red-600"}`}>{formatPercentage(ranking.outperformance)}</div>
                     </div>
                     <div>
                       <span className='text-gray-600'>Percentile:</span>
@@ -296,22 +205,8 @@ export function ComparativeAnalyticsCharts({ trades }: ComparativeAnalyticsChart
                 <XAxis dataKey='date' />
                 <YAxis />
                 <Tooltip content={<CustomTooltip />} />
-                <Line 
-                  data={rollingPerformance7D} 
-                  type='monotone' 
-                  dataKey='rollingSharpe' 
-                  stroke='#F59E0B' 
-                  strokeWidth={2} 
-                  name='7D Rolling Sharpe' 
-                />
-                <Line 
-                  data={rollingPerformance30D} 
-                  type='monotone' 
-                  dataKey='rollingSharpe' 
-                  stroke='#8B5CF6' 
-                  strokeWidth={2} 
-                  name='30D Rolling Sharpe' 
-                />
+                <Line data={rollingPerformance7D} type='monotone' dataKey='rollingSharpe' stroke='#F59E0B' strokeWidth={2} name='7D Rolling Sharpe' />
+                <Line data={rollingPerformance30D} type='monotone' dataKey='rollingSharpe' stroke='#8B5CF6' strokeWidth={2} name='30D Rolling Sharpe' />
                 <Legend />
               </LineChart>
             </ResponsiveContainer>
@@ -319,10 +214,18 @@ export function ComparativeAnalyticsCharts({ trades }: ComparativeAnalyticsChart
           <div className='mt-4 p-4 bg-blue-50 rounded-lg'>
             <h5 className='font-medium text-blue-900 mb-2'>Rolling Performance Insights:</h5>
             <ul className='text-sm text-blue-700 space-y-1'>
-              <li>• <strong>7-Day Rolling:</strong> Shows short-term performance trends and volatility</li>
-              <li>• <strong>30-Day Rolling:</strong> Provides smoother, more stable performance view</li>
-              <li>• <strong>Divergence:</strong> Large gaps indicate inconsistent short-term performance</li>
-              <li>• <strong>Convergence:</strong> Similar values suggest stable trading performance</li>
+              <li>
+                • <strong>7-Day Rolling:</strong> Shows short-term performance trends and volatility
+              </li>
+              <li>
+                • <strong>30-Day Rolling:</strong> Provides smoother, more stable performance view
+              </li>
+              <li>
+                • <strong>Divergence:</strong> Large gaps indicate inconsistent short-term performance
+              </li>
+              <li>
+                • <strong>Convergence:</strong> Similar values suggest stable trading performance
+              </li>
             </ul>
           </div>
         </div>
@@ -335,52 +238,48 @@ export function ComparativeAnalyticsCharts({ trades }: ComparativeAnalyticsChart
           <div className='bg-green-50 rounded-lg p-4'>
             <h4 className='font-semibold text-green-900 mb-2'>✅ Strengths</h4>
             <ul className='text-sm text-green-700 space-y-1'>
-              {totalOutperformance > 0 && (
-                <li>• Positive cumulative outperformance ({formatPercentage(totalOutperformance)})</li>
-              )}
-              {outperformanceRate > 50 && (
-                <li>• Outperforming benchmark {formatPercentage(outperformanceRate)} of the time</li>
-              )}
-              {currentRolling30D && currentRolling30D.rollingSharpe > 1 && (
-                <li>• Strong risk-adjusted returns (Sharpe &gt; 1.0)</li>
-              )}
-              {avgDailyOutperformance > 0 && (
-                <li>• Consistent daily outperformance</li>
-              )}
+              {totalOutperformance > 0 && <li>• Positive cumulative outperformance ({formatPercentage(totalOutperformance)})</li>}
+              {outperformanceRate > 50 && <li>• Outperforming benchmark {formatPercentage(outperformanceRate)} of the time</li>}
+              {currentRolling30D && currentRolling30D.rollingSharpe > 1 && <li>• Strong risk-adjusted returns (Sharpe &gt; 1.0)</li>}
+              {avgDailyOutperformance > 0 && <li>• Consistent daily outperformance</li>}
             </ul>
           </div>
-          
+
           <div className='bg-yellow-50 rounded-lg p-4'>
             <h4 className='font-semibold text-yellow-900 mb-2'>⚠️ Areas for Improvement</h4>
             <ul className='text-sm text-yellow-700 space-y-1'>
-              {totalOutperformance < 0 && (
-                <li>• Underperforming benchmark overall</li>
-              )}
-              {outperformanceRate < 50 && (
-                <li>• Outperforming less than 50% of the time</li>
-              )}
-              {currentRolling30D && currentRolling30D.rollingSharpe < 0.5 && (
-                <li>• Low risk-adjusted returns</li>
-              )}
-              {avgDailyOutperformance < 0 && (
-                <li>• Negative average daily outperformance</li>
-              )}
+              {totalOutperformance < 0 && <li>• Underperforming benchmark overall</li>}
+              {outperformanceRate < 50 && <li>• Outperforming less than 50% of the time</li>}
+              {currentRolling30D && currentRolling30D.rollingSharpe < 0.5 && <li>• Low risk-adjusted returns</li>}
+              {avgDailyOutperformance < 0 && <li>• Negative average daily outperformance</li>}
             </ul>
           </div>
-          
+
           <div className='bg-blue-50 rounded-lg p-4'>
             <h4 className='font-semibold text-blue-900 mb-2'>📊 Key Metrics</h4>
             <ul className='text-sm text-blue-700 space-y-1'>
               <li>• Total outperformance: {formatPercentage(totalOutperformance)}</li>
               <li>• Outperformance rate: {formatPercentage(outperformanceRate)}</li>
               <li>• Avg daily excess return: {formatPercentage(avgDailyOutperformance)}</li>
-              {currentRolling30D && (
-                <li>• Current 30D Sharpe: {formatNumber(currentRolling30D.rollingSharpe)}</li>
-              )}
+              {currentRolling30D && <li>• Current 30D Sharpe: {formatNumber(currentRolling30D.rollingSharpe)}</li>}
             </ul>
           </div>
         </div>
       </div>
+
+      {/* AI Recommendations */}
+      <AIRecommendations
+        trades={trades}
+        analysisData={{
+          benchmarkComparison,
+          rollingPerformance30D,
+          rollingPerformance7D,
+          performanceRanking,
+        }}
+        pageContext='portfolio-analytics'
+        pageTitle='Comparative Analytics'
+        dataDescription='comparative performance and benchmark analysis data'
+      />
     </div>
   )
 }

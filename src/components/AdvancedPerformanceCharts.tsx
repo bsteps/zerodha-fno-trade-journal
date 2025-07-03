@@ -3,6 +3,11 @@ import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, L
 import { Trade } from "../types/trade"
 import { calculateStreakAnalysis, calculatePerformanceRatios, calculateMonthlyReturnsHeatmap, StreakAnalysis, PerformanceRatios, MonthlyReturnsHeatmap } from "../utils/calculations"
 import { TrendingUp, TrendingDown, Award, Target, Calendar } from "lucide-react"
+import { InfoTooltip } from "./InfoTooltip"
+import { AIRecommendations } from "./AIRecommendations"
+import { formatCurrency, formatNumber } from '../utils/formatters'
+import { CustomTooltip } from './CustomTooltip'
+import { StatCard } from './StatCard'
 
 interface AdvancedPerformanceChartsProps {
   trades: Trade[]
@@ -14,79 +19,6 @@ export function AdvancedPerformanceCharts({ trades }: AdvancedPerformanceChartsP
   const streakAnalysis = useMemo(() => calculateStreakAnalysis(trades), [trades])
   const performanceRatios = useMemo(() => calculatePerformanceRatios(trades), [trades])
   const monthlyHeatmap = useMemo(() => calculateMonthlyReturnsHeatmap(trades), [trades])
-
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0
-    }).format(value)
-  }
-
-  const formatNumber = (value: number) => {
-    return new Intl.NumberFormat('en-IN', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2
-    }).format(value)
-  }
-
-  const formatPercentage = (value: number) => {
-    return `${formatNumber(value)}%`
-  }
-
-  // Custom tooltip component
-  const CustomTooltip = ({ active, payload, label }: any) => {
-    if (active && payload && payload.length) {
-      return (
-        <div className='bg-white p-3 border border-gray-300 rounded-lg shadow-lg'>
-          <p className='text-gray-900 font-medium'>{label}</p>
-          {payload.map((entry: any, index: number) => (
-            <p key={index} style={{ color: entry.color }}>
-              {`${entry.name}: ${
-                entry.name.includes('P&L') || entry.name.includes('Return') || entry.name.includes('Amount')
-                  ? formatCurrency(entry.value)
-                  : entry.name.includes('%') || entry.name.includes('Rate')
-                  ? formatPercentage(entry.value)
-                  : formatNumber(entry.value)
-              }`}
-            </p>
-          ))}
-        </div>
-      )
-    }
-    return null
-  }
-
-  // Stat card component
-  const StatCard = ({ title, value, icon: Icon, color, subtitle }: {
-    title: string
-    value: string | number
-    icon: any
-    color: 'red' | 'green' | 'blue' | 'yellow' | 'gray'
-    subtitle?: string
-  }) => {
-    const colorClasses = {
-      red: 'bg-red-50 text-red-700 border-red-200',
-      green: 'bg-green-50 text-green-700 border-green-200',
-      blue: 'bg-blue-50 text-blue-700 border-blue-200',
-      yellow: 'bg-yellow-50 text-yellow-700 border-yellow-200',
-      gray: 'bg-gray-50 text-gray-700 border-gray-200'
-    }
-
-    return (
-      <div className={`card border-l-4 ${colorClasses[color]}`}>
-        <div className='flex items-center justify-between'>
-          <div>
-            <p className='text-sm font-medium opacity-75'>{title}</p>
-            <p className='text-2xl font-bold'>{value}</p>
-            {subtitle && <p className='text-xs opacity-60 mt-1'>{subtitle}</p>}
-          </div>
-          <Icon className='w-8 h-8 opacity-50' />
-        </div>
-      </div>
-    )
-  }
 
   // Prepare streak distribution data for chart
   const streakChartData = streakAnalysis.streakDistribution.map(streak => ({
@@ -109,43 +41,85 @@ export function AdvancedPerformanceCharts({ trades }: AdvancedPerformanceChartsP
         <h2 className='text-2xl font-bold text-gray-900 mb-6 flex items-center'>
           <Award className='w-6 h-6 text-blue-600 mr-2' />
           Advanced Performance Metrics
+          <InfoTooltip
+            content="Advanced risk-adjusted performance metrics that help evaluate trading strategy effectiveness beyond simple profit/loss. These ratios are used by professional traders and institutions to assess strategy quality."
+            id="advanced-performance-header"
+          />
         </h2>
         
         <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4'>
-          <StatCard
-            title="Sharpe Ratio"
-            value={formatNumber(performanceRatios.sharpeRatio)}
-            icon={TrendingUp}
-            color={performanceRatios.sharpeRatio >= 1 ? "green" : performanceRatios.sharpeRatio >= 0 ? "yellow" : "red"}
-            subtitle="Risk-adjusted returns"
-          />
-          <StatCard
-            title="Calmar Ratio"
-            value={formatNumber(performanceRatios.calmarRatio)}
-            icon={Target}
-            color={performanceRatios.calmarRatio >= 0.5 ? "green" : performanceRatios.calmarRatio >= 0 ? "yellow" : "red"}
-            subtitle="Return vs Max Drawdown"
-          />
-          <StatCard
-            title="Current Streak"
-            value={`${streakAnalysis.currentStreak.count} ${streakAnalysis.currentStreak.type}s`}
-            icon={streakAnalysis.currentStreak.type === 'win' ? TrendingUp : TrendingDown}
-            color={streakAnalysis.currentStreak.type === 'win' ? "green" : "red"}
-            subtitle={`Longest: ${Math.max(streakAnalysis.longestWinStreak, streakAnalysis.longestLossStreak)} trades`}
-          />
-          <StatCard
-            title="Sortino Ratio"
-            value={formatNumber(performanceRatios.sortinoRatio)}
-            icon={Award}
-            color={performanceRatios.sortinoRatio >= 1 ? "green" : performanceRatios.sortinoRatio >= 0 ? "yellow" : "red"}
-            subtitle="Downside risk adjusted"
-          />
+          <div className="relative">
+            <StatCard
+              title="Sharpe Ratio"
+              value={formatNumber(performanceRatios.sharpeRatio)}
+              icon={TrendingUp}
+              color={performanceRatios.sharpeRatio >= 1 ? "green" : performanceRatios.sharpeRatio >= 0 ? "yellow" : "red"}
+              subtitle="Risk-adjusted returns"
+            />
+            <div className="absolute top-2 right-2">
+              <InfoTooltip
+                content="Sharpe Ratio measures risk-adjusted returns by dividing annual return by annual volatility. Values above 1.0 are good, above 2.0 are excellent. Negative values indicate poor risk management."
+                id="sharpe-ratio-info"
+              />
+            </div>
+          </div>
+          <div className="relative">
+            <StatCard
+              title="Calmar Ratio"
+              value={formatNumber(performanceRatios.calmarRatio)}
+              icon={Target}
+              color={performanceRatios.calmarRatio >= 0.5 ? "green" : performanceRatios.calmarRatio >= 0 ? "yellow" : "red"}
+              subtitle="Return vs Max Drawdown"
+            />
+            <div className="absolute top-2 right-2">
+              <InfoTooltip
+                content="Calmar Ratio divides annual return by maximum drawdown. It shows how much return you get per unit of worst-case loss. Values above 0.5 are good, above 3.0 are excellent."
+                id="calmar-ratio-info"
+              />
+            </div>
+          </div>
+          <div className="relative">
+            <StatCard
+              title="Current Streak"
+              value={`${streakAnalysis.currentStreak.count} ${streakAnalysis.currentStreak.type}s`}
+              icon={streakAnalysis.currentStreak.type === 'win' ? TrendingUp : TrendingDown}
+              color={streakAnalysis.currentStreak.type === 'win' ? "green" : "red"}
+              subtitle={`Longest: ${Math.max(streakAnalysis.longestWinStreak, streakAnalysis.longestLossStreak)} trades`}
+            />
+            <div className="absolute top-2 right-2">
+              <InfoTooltip
+                content="Current Streak shows your active winning or losing sequence. Long losing streaks may indicate strategy issues or emotional trading. Monitor this to manage psychology and risk."
+                id="current-streak-info"
+              />
+            </div>
+          </div>
+          <div className="relative">
+            <StatCard
+              title="Sortino Ratio"
+              value={formatNumber(performanceRatios.sortinoRatio)}
+              icon={Award}
+              color={performanceRatios.sortinoRatio >= 1 ? "green" : performanceRatios.sortinoRatio >= 0 ? "yellow" : "red"}
+              subtitle="Downside risk adjusted"
+            />
+            <div className="absolute top-2 right-2">
+              <InfoTooltip
+                content="Sortino Ratio is like Sharpe Ratio but only considers downside volatility, ignoring upside volatility. This gives a better picture of risk since upside volatility is desirable."
+                id="sortino-ratio-info"
+              />
+            </div>
+          </div>
         </div>
       </div>
 
       {/* Performance Ratios Comparison */}
       <div className='card'>
-        <h3 className='text-lg font-semibold text-gray-900 mb-4'>Performance Ratios vs Benchmarks</h3>
+        <h3 className='text-lg font-semibold text-gray-900 mb-4 flex items-center'>
+          Performance Ratios vs Benchmarks
+          <InfoTooltip
+            content="This chart compares your performance ratios against industry benchmarks. Green bars indicate good performance, red bars suggest areas for improvement. The gray bars show benchmark values to aim for."
+            id="ratios-comparison-info"
+          />
+        </h3>
         <div className='h-64'>
           <ResponsiveContainer width='100%' height='100%'>
             <BarChart data={ratiosData} layout='horizontal'>
@@ -176,7 +150,13 @@ export function AdvancedPerformanceCharts({ trades }: AdvancedPerformanceChartsP
       {streakChartData.length > 0 && (
         <div className='grid grid-cols-1 lg:grid-cols-2 gap-6'>
           <div className='card'>
-            <h3 className='text-lg font-semibold text-gray-900 mb-4'>Win/Loss Streak Distribution</h3>
+            <h3 className='text-lg font-semibold text-gray-900 mb-4 flex items-center'>
+              Win/Loss Streak Distribution
+              <InfoTooltip
+                content="Shows the frequency of different streak lengths. Ideally, you want more short loss streaks and longer win streaks. Long loss streaks indicate poor risk management or emotional trading."
+                id="streak-distribution-info"
+              />
+            </h3>
             <div className='h-64'>
               <ResponsiveContainer width='100%' height='100%'>
                 <BarChart data={streakChartData}>
@@ -193,11 +173,23 @@ export function AdvancedPerformanceCharts({ trades }: AdvancedPerformanceChartsP
           </div>
 
           <div className='card'>
-            <h3 className='text-lg font-semibold text-gray-900 mb-4'>Streak Statistics</h3>
+            <h3 className='text-lg font-semibold text-gray-900 mb-4 flex items-center'>
+              Streak Statistics
+              <InfoTooltip
+                content="Detailed streak analysis showing your longest and average winning/losing streaks. Good traders typically have longer average win streaks than loss streaks, indicating they let winners run and cut losses short."
+                id="streak-statistics-info"
+              />
+            </h3>
             <div className='space-y-4'>
               <div className='grid grid-cols-2 gap-4'>
                 <div className='bg-green-50 rounded-lg p-4'>
-                  <h4 className='font-semibold text-green-900 mb-2'>Win Streaks</h4>
+                  <h4 className='font-semibold text-green-900 mb-2 flex items-center'>
+                    Win Streaks
+                    <InfoTooltip
+                      content="Win streak statistics show your ability to maintain profitable momentum. Longer win streaks indicate good strategy execution and emotional control during profitable periods."
+                      id="win-streaks-info"
+                    />
+                  </h4>
                   <div className='space-y-2 text-sm'>
                     <div className='flex justify-between'>
                       <span className='text-green-700'>Longest:</span>
@@ -211,7 +203,13 @@ export function AdvancedPerformanceCharts({ trades }: AdvancedPerformanceChartsP
                 </div>
                 
                 <div className='bg-red-50 rounded-lg p-4'>
-                  <h4 className='font-semibold text-red-900 mb-2'>Loss Streaks</h4>
+                  <h4 className='font-semibold text-red-900 mb-2 flex items-center'>
+                    Loss Streaks
+                    <InfoTooltip
+                      content="Loss streak statistics reveal risk management effectiveness. Long loss streaks often indicate emotional trading, poor stop-loss discipline, or strategy breakdown. Aim to keep these short."
+                      id="loss-streaks-info"
+                    />
+                  </h4>
                   <div className='space-y-2 text-sm'>
                     <div className='flex justify-between'>
                       <span className='text-red-700'>Longest:</span>
@@ -226,7 +224,13 @@ export function AdvancedPerformanceCharts({ trades }: AdvancedPerformanceChartsP
               </div>
               
               <div className='bg-blue-50 rounded-lg p-4'>
-                <h4 className='font-semibold text-blue-900 mb-2'>Current Status</h4>
+                <h4 className='font-semibold text-blue-900 mb-2 flex items-center'>
+                  Current Status
+                  <InfoTooltip
+                    content="Your current active streak. If on a losing streak, consider reducing position sizes or taking a break to reset psychology. If on a winning streak, maintain discipline and don't get overconfident."
+                    id="current-status-info"
+                  />
+                </h4>
                 <div className='text-center'>
                   <div className={`text-2xl font-bold ${streakAnalysis.currentStreak.type === 'win' ? 'text-green-600' : 'text-red-600'}`}>
                     {streakAnalysis.currentStreak.count} {streakAnalysis.currentStreak.type === 'win' ? 'Wins' : 'Losses'}
@@ -245,6 +249,10 @@ export function AdvancedPerformanceCharts({ trades }: AdvancedPerformanceChartsP
           <h3 className='text-lg font-semibold text-gray-900 mb-4 flex items-center'>
             <Calendar className='w-5 h-5 text-blue-600 mr-2' />
             Monthly Returns Heatmap
+            <InfoTooltip
+              content="Visual representation of monthly performance across years. Green indicates profitable months, red shows losses. Darker colors represent higher absolute returns. Helps identify seasonal patterns and consistency."
+              id="monthly-heatmap-info"
+            />
           </h3>
           <div className='space-y-6'>
             {monthlyHeatmap.map(yearData => (
@@ -308,6 +316,17 @@ export function AdvancedPerformanceCharts({ trades }: AdvancedPerformanceChartsP
           </div>
         </div>
       )}
+
+      {/* AI Recommendations */}
+      <AIRecommendations
+        trades={trades}
+        analysisData={{
+          streakAnalysis,
+          performanceRatios,
+          monthlyHeatmap
+        }}
+        pageContext="advanced-performance"
+      />
     </div>
   )
 }
