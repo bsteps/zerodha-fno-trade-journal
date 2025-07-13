@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Settings as SettingsIcon, Key, Save, Eye, EyeOff, X } from 'lucide-react';
+import { Settings as SettingsIcon, Key, Save, Eye, EyeOff, X, AlertTriangle } from 'lucide-react';
 
 interface SettingsProps {
   onClose: () => void;
@@ -8,14 +8,32 @@ interface SettingsProps {
 export function Settings({ onClose }: SettingsProps) {
   const [geminiApiKey, setGeminiApiKey] = useState('');
   const [showApiKey, setShowApiKey] = useState(false);
+  const [maxLossPerTrade, setMaxLossPerTrade] = useState('');
+  const [maxLossPerDay, setMaxLossPerDay] = useState('');
+  const [maxTradesPerDay, setMaxTradesPerDay] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState('');
 
-  // Load API key from localStorage on component mount
+  // Load settings from localStorage on component mount
   useEffect(() => {
     const savedApiKey = localStorage.getItem('gemini_api_key');
     if (savedApiKey) {
       setGeminiApiKey(savedApiKey);
+    }
+
+    const savedMaxLossPerTrade = localStorage.getItem('max_loss_per_trade');
+    if (savedMaxLossPerTrade) {
+      setMaxLossPerTrade(savedMaxLossPerTrade);
+    }
+
+    const savedMaxLossPerDay = localStorage.getItem('max_loss_per_day');
+    if (savedMaxLossPerDay) {
+      setMaxLossPerDay(savedMaxLossPerDay);
+    }
+
+    const savedMaxTradesPerDay = localStorage.getItem('max_trades_per_day');
+    if (savedMaxTradesPerDay) {
+      setMaxTradesPerDay(savedMaxTradesPerDay);
     }
   }, []);
 
@@ -24,19 +42,53 @@ export function Settings({ onClose }: SettingsProps) {
     setSaveMessage('');
 
     try {
+      // Save API key
       if (geminiApiKey.trim()) {
         // Validate API key format (basic validation)
         if (!geminiApiKey.startsWith('AIza')) {
           throw new Error('Invalid API key format. Gemini API keys should start with "AIza"');
         }
         localStorage.setItem('gemini_api_key', geminiApiKey.trim());
-        setSaveMessage('API key saved successfully!');
       } else {
         localStorage.removeItem('gemini_api_key');
-        setSaveMessage('API key removed successfully!');
       }
+
+      // Save max loss per trade
+      if (maxLossPerTrade.trim()) {
+        const value = parseFloat(maxLossPerTrade.trim());
+        if (isNaN(value) || value <= 0) {
+          throw new Error('Max Loss per Trade must be a positive number');
+        }
+        localStorage.setItem('max_loss_per_trade', maxLossPerTrade.trim());
+      } else {
+        localStorage.removeItem('max_loss_per_trade');
+      }
+
+      // Save max loss per day
+      if (maxLossPerDay.trim()) {
+        const value = parseFloat(maxLossPerDay.trim());
+        if (isNaN(value) || value <= 0) {
+          throw new Error('Max Loss per Day must be a positive number');
+        }
+        localStorage.setItem('max_loss_per_day', maxLossPerDay.trim());
+      } else {
+        localStorage.removeItem('max_loss_per_day');
+      }
+
+      // Save max trades per day
+      if (maxTradesPerDay.trim()) {
+        const value = parseInt(maxTradesPerDay.trim());
+        if (isNaN(value) || value <= 0) {
+          throw new Error('Max Trades per Day must be a positive integer');
+        }
+        localStorage.setItem('max_trades_per_day', maxTradesPerDay.trim());
+      } else {
+        localStorage.removeItem('max_trades_per_day');
+      }
+
+      setSaveMessage('Settings saved successfully!');
     } catch (error) {
-      setSaveMessage(error instanceof Error ? error.message : 'Failed to save API key');
+      setSaveMessage(error instanceof Error ? error.message : 'Failed to save settings');
     } finally {
       setIsSaving(false);
       setTimeout(() => setSaveMessage(''), 3000);
@@ -143,6 +195,67 @@ export function Settings({ onClose }: SettingsProps) {
             </div>
           </div>
 
+          {/* Trading Risk Management Section */}
+          <div>
+            <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
+              <AlertTriangle className="w-5 h-5 text-red-600 mr-2" />
+              Risk Management
+            </h3>
+
+            <div className="space-y-4">
+              <div>
+                <label htmlFor="max-loss-per-trade" className="block text-sm font-medium text-gray-700 mb-2">
+                  Max Loss per Trade (₹)
+                </label>
+                <input
+                  id="max-loss-per-trade"
+                  type="number"
+                  value={maxLossPerTrade}
+                  onChange={(e) => setMaxLossPerTrade(e.target.value)}
+                  placeholder="e.g., 5000 (leave empty to disable)"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Used for revenge trade detection. Leave empty to disable this check.
+                </p>
+              </div>
+
+              <div>
+                <label htmlFor="max-loss-per-day" className="block text-sm font-medium text-gray-700 mb-2">
+                  Max Loss per Day (₹)
+                </label>
+                <input
+                  id="max-loss-per-day"
+                  type="number"
+                  value={maxLossPerDay}
+                  onChange={(e) => setMaxLossPerDay(e.target.value)}
+                  placeholder="e.g., 15000 (leave empty to disable)"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Used for revenge trade detection. Leave empty to disable this check.
+                </p>
+              </div>
+
+              <div>
+                <label htmlFor="max-trades-per-day" className="block text-sm font-medium text-gray-700 mb-2">
+                  Max Trades per Day
+                </label>
+                <input
+                  id="max-trades-per-day"
+                  type="number"
+                  value={maxTradesPerDay}
+                  onChange={(e) => setMaxTradesPerDay(e.target.value)}
+                  placeholder="e.g., 10 (leave empty for auto-calculation)"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Used for overtrading detection. Leave empty to use statistical threshold (mean + 1 std dev).
+                </p>
+              </div>
+            </div>
+          </div>
+
           {/* AI Features Info */}
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
             <h4 className="text-sm font-medium text-blue-900 mb-2">AI-Powered Features</h4>
@@ -158,7 +271,7 @@ export function Settings({ onClose }: SettingsProps) {
           <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
             <h4 className="text-sm font-medium text-gray-900 mb-2">Privacy & Security</h4>
             <p className="text-sm text-gray-700">
-              Your API key is stored locally in your browser and never sent to our servers. 
+              Your API key and risk management settings are stored locally in your browser and never sent to our servers.
               Trading data is processed by Google's Gemini AI to generate insights.
             </p>
           </div>

@@ -1,7 +1,7 @@
 import React, { useMemo } from "react"
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell, PieChart, Pie } from "recharts"
 import { Trade } from "../types/trade"
-import { calculateHoldTimeAnalysis, calculateEntryExitTimingAnalysis, calculateInstrumentTypeAnalysis, HoldTimeAnalysis, EntryExitTimingAnalysis, InstrumentTypeAnalysis } from "../utils/calculations"
+import { calculateHoldTimeAnalysis, calculateEntryExitTimingAnalysis, calculateInstrumentTypeAnalysis, HoldTimeAnalysis, EntryExitTimingAnalysis, InstrumentTypeAnalysis, calculatePositions } from "../utils/calculations"
 import { Clock, Target, TrendingUp, Activity } from "lucide-react"
 import { InfoTooltip } from './InfoTooltip'
 import { AIRecommendations } from './AIRecommendations'
@@ -16,9 +16,13 @@ interface StrategyAnalysisChartsProps {
 const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042", "#8884D8", "#82CA9D"]
 
 export function StrategyAnalysisCharts({ trades }: StrategyAnalysisChartsProps) {
-  const holdTimeAnalysis = useMemo(() => calculateHoldTimeAnalysis(trades), [trades])
-  const entryExitAnalysis = useMemo(() => calculateEntryExitTimingAnalysis(trades), [trades])
-  const instrumentAnalysis = useMemo(() => calculateInstrumentTypeAnalysis(trades), [trades])
+  const positions = useMemo(() => calculatePositions(trades), [trades])
+  const holdTimeAnalysis = useMemo(() => calculateHoldTimeAnalysis(positions), [positions])
+  const entryExitAnalysis = useMemo(() => calculateEntryExitTimingAnalysis(positions), [positions])
+  const instrumentAnalysis = useMemo(() => calculateInstrumentTypeAnalysis(positions), [positions])
+
+  console.log(holdTimeAnalysis);
+  
 
   // Find best performing strategies
   const bestHoldTime = holdTimeAnalysis.reduce((best, ht) => 

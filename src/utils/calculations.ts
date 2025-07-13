@@ -1,6 +1,26 @@
 import { format, startOfDay } from 'date-fns';
 import { DailyPnL, Position, SymbolPerformance, Trade, TradeStatistics } from '../types/trade';
 
+// Risk management settings interface
+export interface RiskSettings {
+  maxLossPerTrade?: number;
+  maxLossPerDay?: number;
+  maxTradesPerDay?: number;
+}
+
+// Get risk management settings from localStorage
+export function getRiskSettings(): RiskSettings {
+  const maxLossPerTrade = localStorage.getItem('max_loss_per_trade');
+  const maxLossPerDay = localStorage.getItem('max_loss_per_day');
+  const maxTradesPerDay = localStorage.getItem('max_trades_per_day');
+
+  return {
+    maxLossPerTrade: maxLossPerTrade ? parseFloat(maxLossPerTrade) : undefined,
+    maxLossPerDay: maxLossPerDay ? parseFloat(maxLossPerDay) : undefined,
+    maxTradesPerDay: maxTradesPerDay ? parseInt(maxTradesPerDay) : undefined,
+  };
+}
+
 // Broker fee structure
 interface BrokerageCharges {
   brokerage: number;
@@ -468,7 +488,7 @@ export function calculateSymbolPerformance(trades: Trade[]): SymbolPerformance[]
 
   positions.forEach(position => {
     const symbol = position.symbol;
-    
+
     if (!symbolMap.has(symbol)) {
       symbolMap.set(symbol, {
         symbol,
@@ -483,7 +503,7 @@ export function calculateSymbolPerformance(trades: Trade[]): SymbolPerformance[]
 
     const symbolPerf = symbolMap.get(symbol)!;
     symbolPerf.totalTrades += position.trades.length;
-    
+
     if (position.status === 'closed') {
       symbolPerf.totalPnL += position.realizedPnL;
       symbolPerf.maxWin = Math.max(symbolPerf.maxWin, position.realizedPnL);
@@ -493,10 +513,10 @@ export function calculateSymbolPerformance(trades: Trade[]): SymbolPerformance[]
 
   // Calculate averages and win rates
   symbolMap.forEach(symbolPerf => {
-    const symbolPositions = positions.filter(p => 
+    const symbolPositions = positions.filter(p =>
       (p.symbol) === symbolPerf.symbol && p.status === 'closed'
     );
-    
+
     if (symbolPositions.length > 0) {
       const winningPositions = symbolPositions.filter(p => p.realizedPnL > 0);
       symbolPerf.winRate = (winningPositions.length / symbolPositions.length) * 100;
@@ -1105,7 +1125,7 @@ export function calculateMonthlyReturnsHeatmap(trades: Trade[]): MonthlyReturnsH
 
     const yearData = yearlyData.get(year)!;
     const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-                       'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
     yearData.months.push({
       month,
@@ -1161,17 +1181,17 @@ export interface MarketSessionAnalysis {
   losingTrades: number;
 }
 
-export interface VolatilityAnalysis {
-  volatilityRange: string;
+export interface HoldingPeriodAnalysis {
+  holdingPeriodRange: string;
   tradeCount: number;
   avgPnL: number;
   winRate: number;
-  avgVolatility: number;
+  avgHoldingMinutes: number;
+  totalPnL: number;
 }
 
 // Calculate day of week performance
-export function calculateDayOfWeekAnalysis(trades: Trade[]): DayOfWeekAnalysis[] {
-  const positions = calculatePositions(trades);
+export function calculateDayOfWeekAnalysis(positions: EnhancedPosition[]): DayOfWeekAnalysis[] {
   const closedPositions = positions.filter(p => p.status === 'closed');
 
   const dayMap = new Map<number, DayOfWeekAnalysis>();
@@ -1193,10 +1213,7 @@ export function calculateDayOfWeekAnalysis(trades: Trade[]): DayOfWeekAnalysis[]
 
   closedPositions.forEach(position => {
     // Use the last trade date for the position
-    const lastTradeDate = position.trades.reduce((latest, trade) =>
-      trade.tradeDate > latest ? trade.tradeDate : latest,
-      position.trades[0].tradeDate
-    );
+    const lastTradeDate = position.openTime
 
     const dayOfWeek = lastTradeDate.getDay();
     const dayData = dayMap.get(dayOfWeek)!;
@@ -1221,8 +1238,7 @@ export function calculateDayOfWeekAnalysis(trades: Trade[]): DayOfWeekAnalysis[]
 }
 
 // Calculate market session performance
-export function calculateMarketSessionAnalysis(trades: Trade[]): MarketSessionAnalysis[] {
-  const positions = calculatePositions(trades);
+export function calculateMarketSessionAnalysis(positions: EnhancedPosition[]): MarketSessionAnalysis[] {
   const closedPositions = positions.filter(p => p.status === 'closed');
 
   const sessions: MarketSessionAnalysis[] = [
@@ -1249,10 +1265,7 @@ export function calculateMarketSessionAnalysis(trades: Trade[]): MarketSessionAn
 
   closedPositions.forEach(position => {
     // Use the first trade time for entry analysis
-    const firstTradeTime = position.trades.reduce((earliest, trade) =>
-      trade.orderExecutionTime < earliest ? trade.orderExecutionTime : earliest,
-      position.trades[0].orderExecutionTime
-    );
+    const firstTradeTime = position.openTime;
 
     const sessionIndex = getSessionIndex(firstTradeTime);
     const session = sessions[sessionIndex];
@@ -1276,64 +1289,60 @@ export function calculateMarketSessionAnalysis(trades: Trade[]): MarketSessionAn
   return sessions.filter(session => session.totalTrades > 0);
 }
 
-// Calculate volatility vs performance analysis
-export function calculateVolatilityAnalysis(trades: Trade[]): VolatilityAnalysis[] {
-  const positions = calculatePositions(trades);
-  const closedPositions = positions.filter(p => p.status === 'closed');
+// Calculate holding period vs performance analysis
+export function calculateHoldingPeriodAnalysis(positions: EnhancedPosition[]): HoldingPeriodAnalysis[] {
+  const closedPositions = positions.filter(p => p.status === 'closed' && p.closeTime);
 
   if (closedPositions.length === 0) {
     return [];
   }
 
-  // Calculate volatility for each position (using price range as proxy)
-  const positionsWithVolatility = closedPositions.map(position => {
-    const prices = position.trades.map(t => t.price);
-    const minPrice = Math.min(...prices);
-    const maxPrice = Math.max(...prices);
-    const avgPrice = prices.reduce((sum, p) => sum + p, 0) / prices.length;
-    const volatility = avgPrice > 0 ? ((maxPrice - minPrice) / avgPrice) * 100 : 0;
+  // Calculate holding period for each position
+  const positionsWithHoldingPeriod = closedPositions.map(position => {
+    const openTime = position.openTime;
+    const closeTime = position.closeTime!;
+
+    // Calculate holding period in minutes
+    const holdingMinutes = Math.round((closeTime.getTime() - openTime.getTime()) / (1000 * 60));
 
     return {
       ...position,
-      volatility
+      holdingMinutes
     };
   });
 
-  // Define volatility ranges
-  const allVolatilities = positionsWithVolatility.map(p => p.volatility);
-  const minVol = Math.min(...allVolatilities);
-  const maxVol = Math.max(...allVolatilities);
-  const volRange = maxVol - minVol;
-
+  // Define meaningful holding period ranges for F&O trading
   const ranges = [
-    { min: minVol, max: minVol + volRange * 0.25, label: 'Low (0-25%)' },
-    { min: minVol + volRange * 0.25, max: minVol + volRange * 0.5, label: 'Medium-Low (25-50%)' },
-    { min: minVol + volRange * 0.5, max: minVol + volRange * 0.75, label: 'Medium-High (50-75%)' },
-    { min: minVol + volRange * 0.75, max: maxVol, label: 'High (75-100%)' }
+    { min: 0, max: 15, label: 'Scalping (0-15 min)' },
+    { min: 15, max: 60, label: 'Short-term (15-60 min)' },
+    { min: 60, max: 240, label: 'Medium-term (1-4 hours)' },
+    { min: 240, max: 1440, label: 'Intraday (4-24 hours)' },
+    { min: 1440, max: Infinity, label: 'Multi-day (1+ days)' }
   ];
 
-  const volatilityAnalysis = ranges.map(range => {
-    const positionsInRange = positionsWithVolatility.filter(p =>
-      p.volatility >= range.min && p.volatility <= range.max
+  const holdingPeriodAnalysis = ranges.map(range => {
+    const positionsInRange = positionsWithHoldingPeriod.filter(p =>
+      p.holdingMinutes >= range.min && p.holdingMinutes < range.max
     );
 
     const winningPositions = positionsInRange.filter(p => p.realizedPnL > 0);
-    const avgPnL = positionsInRange.length > 0 ?
-      positionsInRange.reduce((sum, p) => sum + p.realizedPnL, 0) / positionsInRange.length : 0;
+    const totalPnL = positionsInRange.reduce((sum, p) => sum + p.realizedPnL, 0);
+    const avgPnL = positionsInRange.length > 0 ? totalPnL / positionsInRange.length : 0;
     const winRate = positionsInRange.length > 0 ? (winningPositions.length / positionsInRange.length) * 100 : 0;
-    const avgVolatility = positionsInRange.length > 0 ?
-      positionsInRange.reduce((sum, p) => sum + p.volatility, 0) / positionsInRange.length : 0;
+    const avgHoldingMinutes = positionsInRange.length > 0 ?
+      positionsInRange.reduce((sum, p) => sum + p.holdingMinutes, 0) / positionsInRange.length : 0;
 
     return {
-      volatilityRange: range.label,
+      holdingPeriodRange: range.label,
       tradeCount: positionsInRange.length,
       avgPnL,
       winRate,
-      avgVolatility
+      avgHoldingMinutes,
+      totalPnL
     };
   });
 
-  return volatilityAnalysis.filter(va => va.tradeCount > 0);
+  return holdingPeriodAnalysis.filter(hpa => hpa.tradeCount > 0);
 }
 
 // Strategy Analysis interfaces
@@ -1371,8 +1380,7 @@ export interface InstrumentTypeAnalysis {
 }
 
 // Calculate hold time analysis
-export function calculateHoldTimeAnalysis(trades: Trade[]): HoldTimeAnalysis[] {
-  const positions = calculatePositions(trades);
+export function calculateHoldTimeAnalysis(positions: EnhancedPosition[]): HoldTimeAnalysis[] {
   const closedPositions = positions.filter(p => p.status === 'closed');
 
   if (closedPositions.length === 0) {
@@ -1381,16 +1389,10 @@ export function calculateHoldTimeAnalysis(trades: Trade[]): HoldTimeAnalysis[] {
 
   // Calculate hold time for each position
   const positionsWithHoldTime = closedPositions.map(position => {
-    const entryTimes = position.trades.filter(t => t.tradeType === 'buy').map(t => t.orderExecutionTime);
-    const exitTimes = position.trades.filter(t => t.tradeType === 'sell').map(t => t.orderExecutionTime);
+    const entryTimes = position.openTime;
+    const exitTimes = position.closeTime ?? entryTimes;
 
-    if (entryTimes.length === 0 || exitTimes.length === 0) {
-      return { ...position, holdTimeMinutes: 0 };
-    }
-
-    const firstEntry = new Date(Math.min(...entryTimes.map(t => t.getTime())));
-    const lastExit = new Date(Math.max(...exitTimes.map(t => t.getTime())));
-    const holdTimeMinutes = (lastExit.getTime() - firstEntry.getTime()) / (1000 * 60);
+    const holdTimeMinutes = (exitTimes.getTime() - entryTimes.getTime()) / (1000 * 60);
 
     return { ...position, holdTimeMinutes };
   });
@@ -1430,8 +1432,7 @@ export function calculateHoldTimeAnalysis(trades: Trade[]): HoldTimeAnalysis[] {
 }
 
 // Calculate entry/exit timing analysis
-export function calculateEntryExitTimingAnalysis(trades: Trade[]): EntryExitTimingAnalysis[] {
-  const positions = calculatePositions(trades);
+export function calculateEntryExitTimingAnalysis(positions: EnhancedPosition[]): EntryExitTimingAnalysis[] {
   const closedPositions = positions.filter(p => p.status === 'closed');
 
   if (closedPositions.length === 0) {
@@ -1459,41 +1460,28 @@ export function calculateEntryExitTimingAnalysis(trades: Trade[]): EntryExitTimi
 
   closedPositions.forEach(position => {
     // Entry analysis (first buy trade)
-    const entryTrades = position.trades.filter(t => t.tradeType === 'buy');
-    if (entryTrades.length > 0) {
-      const firstEntry = entryTrades.reduce((earliest, trade) =>
-        trade.orderExecutionTime < earliest.orderExecutionTime ? trade : earliest
-      );
-      const entryHour = firstEntry.orderExecutionTime.getHours();
+    const entryHour = position.openTime.getHours();
 
-      if (hourlyData.has(entryHour)) {
-        const hourData = hourlyData.get(entryHour)!;
-        hourData.entryTrades++;
+    if (hourlyData.has(entryHour)) {
+      const hourData = hourlyData.get(entryHour)!;
+      hourData.entryTrades++;
 
-        if (!entryPnLByHour.has(entryHour)) {
-          entryPnLByHour.set(entryHour, []);
-        }
-        entryPnLByHour.get(entryHour)!.push(position.realizedPnL);
+      if (!entryPnLByHour.has(entryHour)) {
+        entryPnLByHour.set(entryHour, []);
       }
+      entryPnLByHour.get(entryHour)!.push(position.realizedPnL);
     }
 
-    // Exit analysis (last sell trade)
-    const exitTrades = position.trades.filter(t => t.tradeType === 'sell');
-    if (exitTrades.length > 0) {
-      const lastExit = exitTrades.reduce((latest, trade) =>
-        trade.orderExecutionTime > latest.orderExecutionTime ? trade : latest
-      );
-      const exitHour = lastExit.orderExecutionTime.getHours();
+    const exitHour = (position.closeTime ?? position.openTime).getHours();
 
-      if (hourlyData.has(exitHour)) {
-        const hourData = hourlyData.get(exitHour)!;
-        hourData.exitTrades++;
+    if (hourlyData.has(exitHour)) {
+      const hourData = hourlyData.get(exitHour)!;
+      hourData.exitTrades++;
 
-        if (!exitPnLByHour.has(exitHour)) {
-          exitPnLByHour.set(exitHour, []);
-        }
-        exitPnLByHour.get(exitHour)!.push(position.realizedPnL);
+      if (!exitPnLByHour.has(exitHour)) {
+        exitPnLByHour.set(exitHour, []);
       }
+      exitPnLByHour.get(exitHour)!.push(position.realizedPnL);
     }
   });
 
@@ -1513,8 +1501,7 @@ export function calculateEntryExitTimingAnalysis(trades: Trade[]): EntryExitTimi
 }
 
 // Calculate instrument type analysis
-export function calculateInstrumentTypeAnalysis(trades: Trade[]): InstrumentTypeAnalysis[] {
-  const positions = calculatePositions(trades);
+export function calculateInstrumentTypeAnalysis(positions: EnhancedPosition[]): InstrumentTypeAnalysis[] {
   const closedPositions = positions.filter(p => p.status === 'closed');
 
   if (closedPositions.length === 0) {
@@ -1529,7 +1516,7 @@ export function calculateInstrumentTypeAnalysis(trades: Trade[]): InstrumentType
 
     if (!instrumentMap.has(key)) {
       const instrumentName = instrumentType === 'CE' ? 'Call Options' :
-                           instrumentType === 'PE' ? 'Put Options' : 'Futures';
+        instrumentType === 'PE' ? 'Put Options' : 'Futures';
 
       instrumentMap.set(key, {
         instrumentType,
@@ -1557,15 +1544,11 @@ export function calculateInstrumentTypeAnalysis(trades: Trade[]): InstrumentType
     }
 
     // Calculate hold time
-    const entryTimes = position.trades.filter(t => t.tradeType === 'buy').map(t => t.orderExecutionTime);
-    const exitTimes = position.trades.filter(t => t.tradeType === 'sell').map(t => t.orderExecutionTime);
+    const entryTimes = position.openTime;
+    const exitTimes = position.closeTime ?? entryTimes;
 
-    if (entryTimes.length > 0 && exitTimes.length > 0) {
-      const firstEntry = new Date(Math.min(...entryTimes.map(t => t.getTime())));
-      const lastExit = new Date(Math.max(...exitTimes.map(t => t.getTime())));
-      const holdTimeMinutes = (lastExit.getTime() - firstEntry.getTime()) / (1000 * 60);
-      instrumentData.avgHoldTimeMinutes += holdTimeMinutes;
-    }
+    const holdTimeMinutes = (exitTimes.getTime() - entryTimes.getTime()) / (1000 * 60);
+    instrumentData.avgHoldTimeMinutes += holdTimeMinutes;
   });
 
   // Calculate averages
@@ -1587,6 +1570,7 @@ export interface RevengeTradingAnalysis {
   avgNormalTradePnL: number;
   normalTradeWinRate: number;
   revengeTradesByDay: { date: string; revengeTrades: number; normalTrades: number }[];
+  revengeTrades: EnhancedPosition[];
 }
 
 export interface OvertradingAnalysis {
@@ -1594,6 +1578,7 @@ export interface OvertradingAnalysis {
     date: string;
     tradeCount: number;
     avgPnL: number;
+    totalPnL: number;
     winRate: number;
     isOvertrading: boolean;
   }[];
@@ -1626,16 +1611,9 @@ export interface BehavioralPatterns {
 }
 
 // Calculate revenge trading analysis
-export function calculateRevengeTradingAnalysis(trades: Trade[]): RevengeTradingAnalysis {
-  const positions = calculatePositions(trades);
+export function calculateRevengeTradingAnalysis(positions: EnhancedPosition[]): RevengeTradingAnalysis {
   const closedPositions = positions.filter(p => p.status === 'closed')
-    .sort((a, b) => {
-      const aLastTrade = a.trades.reduce((latest, trade) =>
-        trade.tradeDate > latest ? trade.tradeDate : latest, a.trades[0].tradeDate);
-      const bLastTrade = b.trades.reduce((latest, trade) =>
-        trade.tradeDate > latest ? trade.tradeDate : latest, b.trades[0].tradeDate);
-      return aLastTrade.getTime() - bLastTrade.getTime();
-    });
+    .sort((a, b) => a.openTime.getTime() - b.openTime.getTime());
 
   if (closedPositions.length < 2) {
     return {
@@ -1645,54 +1623,67 @@ export function calculateRevengeTradingAnalysis(trades: Trade[]): RevengeTrading
       revengeTradeWinRate: 0,
       avgNormalTradePnL: 0,
       normalTradeWinRate: 0,
-      revengeTradesByDay: []
+      revengeTradesByDay: [],
+      revengeTrades: []
     };
   }
 
-  // Identify revenge trades (trades made within 2 hours after a loss)
+  const riskSettings = getRiskSettings();
   const revengeTrades: typeof closedPositions = [];
   const normalTrades: typeof closedPositions = [];
   const dailyRevengeMap = new Map<string, { revengeTrades: number; normalTrades: number }>();
 
-  for (let i = 1; i < closedPositions.length; i++) {
+  // Calculate daily P&L up to each position for criterion 3
+  const dailyPnLMap = new Map<string, number>();
+
+  for (let i = 0; i < closedPositions.length; i++) {
     const currentPosition = closedPositions[i];
-    const previousPosition = closedPositions[i - 1];
+    const currentDate = format(startOfDay(currentPosition.openTime), 'yyyy-MM-dd');
 
-    const currentStartTime = currentPosition.trades.reduce((earliest, trade) =>
-      trade.orderExecutionTime < earliest ? trade.orderExecutionTime : earliest,
-      currentPosition.trades[0].orderExecutionTime
-    );
+    // Update daily P&L up to this position
+    if (!dailyPnLMap.has(currentDate)) {
+      dailyPnLMap.set(currentDate, 0);
+    }
 
-    const previousEndTime = previousPosition.trades.reduce((latest, trade) =>
-      trade.orderExecutionTime > latest ? trade.orderExecutionTime : latest,
-      previousPosition.trades[0].orderExecutionTime
-    );
+    let isRevengeTrade = false;
 
-    const timeDiffHours = (currentStartTime.getTime() - previousEndTime.getTime()) / (1000 * 60 * 60);
-    const isRevengeTrade = previousPosition.realizedPnL < 0 && timeDiffHours <= 2 && timeDiffHours >= 0;
+    if (i > 0) {
+      const previousPosition = closedPositions[i - 1];
 
-    const dateKey = format(startOfDay(currentStartTime), 'yyyy-MM-dd');
-    if (!dailyRevengeMap.has(dateKey)) {
-      dailyRevengeMap.set(dateKey, { revengeTrades: 0, normalTrades: 0 });
+      // Criterion 1: Trade taken within 15 minutes of a loss trade
+      const timeDiffMinutes = (currentPosition.openTime.getTime() - (previousPosition.closeTime?.getTime() || previousPosition.openTime.getTime())) / (1000 * 60);
+      const criterion1 = previousPosition.realizedPnL < 0 && timeDiffMinutes <= 15 && timeDiffMinutes >= 0 && previousPosition.symbol === currentPosition.symbol;
+
+      // Criterion 2: Current loss is greater than Max Loss per trade and previous trade was a loss
+      const criterion2 = !!(riskSettings.maxLossPerTrade &&
+        Math.abs(currentPosition.realizedPnL) > riskSettings.maxLossPerTrade &&
+        currentPosition.realizedPnL < 0 &&
+        previousPosition.realizedPnL < 0) && previousPosition.symbol === currentPosition.symbol;
+
+      // Criterion 3: Current trade was taken when current day's loss is greater than Max Loss per day
+      const currentDayLoss = dailyPnLMap.get(currentDate) || 0;
+      const criterion3 = !!(riskSettings.maxLossPerDay &&
+        Math.abs(currentDayLoss) > riskSettings.maxLossPerDay &&
+        currentDayLoss < 0);
+
+      isRevengeTrade = criterion1 || criterion2 || criterion3;
+    }
+
+    // Update daily P&L after checking criteria
+    dailyPnLMap.set(currentDate, (dailyPnLMap.get(currentDate) || 0) + currentPosition.realizedPnL);
+
+    // Categorize the trade
+    if (!dailyRevengeMap.has(currentDate)) {
+      dailyRevengeMap.set(currentDate, { revengeTrades: 0, normalTrades: 0 });
     }
 
     if (isRevengeTrade) {
       revengeTrades.push(currentPosition);
-      dailyRevengeMap.get(dateKey)!.revengeTrades++;
+      dailyRevengeMap.get(currentDate)!.revengeTrades++;
     } else {
       normalTrades.push(currentPosition);
-      dailyRevengeMap.get(dateKey)!.normalTrades++;
+      dailyRevengeMap.get(currentDate)!.normalTrades++;
     }
-  }
-
-  // Add first trade as normal trade
-  if (closedPositions.length > 0) {
-    normalTrades.push(closedPositions[0]);
-    const firstTradeDate = format(startOfDay(closedPositions[0].trades[0].tradeDate), 'yyyy-MM-dd');
-    if (!dailyRevengeMap.has(firstTradeDate)) {
-      dailyRevengeMap.set(firstTradeDate, { revengeTrades: 0, normalTrades: 0 });
-    }
-    dailyRevengeMap.get(firstTradeDate)!.normalTrades++;
   }
 
   // Calculate statistics
@@ -1722,15 +1713,16 @@ export function calculateRevengeTradingAnalysis(trades: Trade[]): RevengeTrading
     revengeTradeWinRate,
     avgNormalTradePnL,
     normalTradeWinRate,
-    revengeTradesByDay
+    revengeTradesByDay,
+    revengeTrades: [],
   };
 }
 
-// Calculate overtrading analysis
-export function calculateOvertradingAnalysis(trades: Trade[]): OvertradingAnalysis {
-  const dailyPnL = calculateDailyPnL(trades);
+// Calculate overtrading analysis based on positions
+export function calculateOvertradingAnalysis(positions: EnhancedPosition[]): OvertradingAnalysis {
+  const closedPositions = positions.filter(p => p.status === 'closed');
 
-  if (dailyPnL.length === 0) {
+  if (closedPositions.length === 0) {
     return {
       dailyTradeStats: [],
       overtradingThreshold: 0,
@@ -1743,20 +1735,58 @@ export function calculateOvertradingAnalysis(trades: Trade[]): OvertradingAnalys
     };
   }
 
-  // Calculate overtrading threshold (mean + 1 standard deviation of daily trade counts)
-  const dailyTradeCounts = dailyPnL.map(day => day.totalOrders);
-  const avgDailyTrades = dailyTradeCounts.reduce((sum, count) => sum + count, 0) / dailyTradeCounts.length;
-  const variance = dailyTradeCounts.reduce((sum, count) => sum + Math.pow(count - avgDailyTrades, 2), 0) / dailyTradeCounts.length;
-  const stdDev = Math.sqrt(variance);
-  const overtradingThreshold = Math.ceil(avgDailyTrades + stdDev);
+  const riskSettings = getRiskSettings();
 
-  // Classify each day
-  const dailyTradeStats = dailyPnL.map(day => ({
-    date: format(day.date, 'yyyy-MM-dd'),
-    tradeCount: day.totalOrders,
-    avgPnL: day.totalOrders > 0 ? day.netPnL / day.totalOrders : 0,
-    winRate: day.orderWinRate,
-    isOvertrading: day.totalOrders > overtradingThreshold
+  // Group positions by date
+  const dailyPositionsMap = new Map<string, EnhancedPosition[]>();
+
+  closedPositions.forEach(position => {
+    const dateKey = format(startOfDay(position.openTime), 'yyyy-MM-dd');
+    if (!dailyPositionsMap.has(dateKey)) {
+      dailyPositionsMap.set(dateKey, []);
+    }
+    dailyPositionsMap.get(dateKey)!.push(position);
+  });
+
+  // Calculate daily statistics
+  const dailyStats = Array.from(dailyPositionsMap.entries()).map(([date, positions]) => {
+    const totalPnL = positions.reduce((sum, p) => sum + p.realizedPnL, 0);
+    const winningPositions = positions.filter(p => p.realizedPnL > 0);
+    const winRate = positions.length > 0 ? (winningPositions.length / positions.length) * 100 : 0;
+    const avgPnL = positions.length > 0 ? totalPnL / positions.length : 0;
+
+    return {
+      date,
+      positionCount: positions.length,
+      totalPnL,
+      avgPnL,
+      winRate
+    };
+  }).sort((a, b) => a.date.localeCompare(b.date));
+
+  // Calculate overtrading threshold - use setting if available, otherwise statistical calculation
+  let overtradingThreshold: number;
+
+  if (riskSettings.maxTradesPerDay) {
+    // Use user-defined threshold
+    overtradingThreshold = riskSettings.maxTradesPerDay;
+  } else {
+    // Calculate statistical threshold (mean + 1 standard deviation of daily position counts)
+    const dailyPositionCounts = dailyStats.map(day => day.positionCount);
+    const avgDailyPositions = dailyPositionCounts.reduce((sum, count) => sum + count, 0) / dailyPositionCounts.length;
+    const variance = dailyPositionCounts.reduce((sum, count) => sum + Math.pow(count - avgDailyPositions, 2), 0) / dailyPositionCounts.length;
+    const stdDev = Math.sqrt(variance);
+    overtradingThreshold = Math.ceil(avgDailyPositions + stdDev);
+  }
+
+  // Classify each day and create daily trade stats
+  const dailyTradeStats = dailyStats.map(day => ({
+    date: day.date,
+    tradeCount: day.positionCount,
+    avgPnL: day.avgPnL,
+    totalPnL: day.totalPnL,
+    winRate: day.winRate,
+    isOvertrading: day.positionCount > overtradingThreshold
   }));
 
   const overtradingDays = dailyTradeStats.filter(day => day.isOvertrading);
@@ -1785,8 +1815,7 @@ export function calculateOvertradingAnalysis(trades: Trade[]): OvertradingAnalys
 }
 
 // Calculate behavioral patterns
-export function calculateBehavioralPatterns(trades: Trade[]): BehavioralPatterns {
-  const positions = calculatePositions(trades);
+export function calculateBehavioralPatterns(positions: EnhancedPosition[]): BehavioralPatterns {
   const closedPositions = positions.filter(p => p.status === 'closed');
 
   if (closedPositions.length === 0) {
@@ -1814,15 +1843,9 @@ export function calculateBehavioralPatterns(trades: Trade[]): BehavioralPatterns
   const winningPositions = closedPositions.filter(p => p.realizedPnL > 0);
   const losingPositions = closedPositions.filter(p => p.realizedPnL < 0);
 
-  const calculateHoldTime = (position: Position): number => {
-    const entryTimes = position.trades.filter(t => t.tradeType === 'buy').map(t => t.orderExecutionTime);
-    const exitTimes = position.trades.filter(t => t.tradeType === 'sell').map(t => t.orderExecutionTime);
-
-    if (entryTimes.length === 0 || exitTimes.length === 0) return 0;
-
-    const firstEntry = new Date(Math.min(...entryTimes.map(t => t.getTime())));
-    const lastExit = new Date(Math.max(...exitTimes.map(t => t.getTime())));
-    return (lastExit.getTime() - firstEntry.getTime()) / (1000 * 60); // minutes
+  const calculateHoldTime = (position: EnhancedPosition): number => {
+    if (!position.closeTime) return 0;
+    return (position.closeTime.getTime() - position.openTime.getTime()) / (1000 * 60); // minutes
   };
 
   const avgWinHoldTime = winningPositions.length > 0 ?
@@ -1832,19 +1855,15 @@ export function calculateBehavioralPatterns(trades: Trade[]): BehavioralPatterns
 
   const ratio = avgLossHoldTime > 0 ? avgWinHoldTime / avgLossHoldTime : 1;
   const pattern = ratio < 0.7 ? 'Quick Profits, Slow Losses' :
-                  ratio > 1.3 ? 'Slow Profits, Quick Losses' : 'Balanced';
+    ratio > 1.3 ? 'Slow Profits, Quick Losses' : 'Balanced';
 
   // Weekend gap effect
   const mondayTrades = closedPositions.filter(p => {
-    const lastTradeDate = p.trades.reduce((latest, trade) =>
-      trade.tradeDate > latest ? trade.tradeDate : latest, p.trades[0].tradeDate);
-    return lastTradeDate.getDay() === 1; // Monday
+    return p.openTime.getDay() === 1; // Monday
   });
 
   const fridayTrades = closedPositions.filter(p => {
-    const lastTradeDate = p.trades.reduce((latest, trade) =>
-      trade.tradeDate > latest ? trade.tradeDate : latest, p.trades[0].tradeDate);
-    return lastTradeDate.getDay() === 5; // Friday
+    return p.openTime.getDay() === 5; // Friday
   });
 
   const mondayPerformance = mondayTrades.length > 0 ?
@@ -1854,35 +1873,26 @@ export function calculateBehavioralPatterns(trades: Trade[]): BehavioralPatterns
   const weekendGapImpact = mondayPerformance - fridayPerformance;
 
   // Emotional trading indicators
-  const avgPositionSize = closedPositions.reduce((sum, p) =>
-    sum + p.trades.reduce((tSum, t) => tSum + t.value, 0), 0) / closedPositions.length;
+  const avgPositionSize = closedPositions.reduce((sum, p) => sum + Math.abs(p.maxQuantity), 0) / closedPositions.length;
 
   let largePositionAfterLoss = 0;
   let rapidFireTrades = 0;
   let lateNightTrades = 0;
 
-  // Sort positions by time
-  const sortedPositions = [...closedPositions].sort((a, b) => {
-    const aTime = a.trades[0].orderExecutionTime.getTime();
-    const bTime = b.trades[0].orderExecutionTime.getTime();
-    return aTime - bTime;
-  });
+  // Sort positions by openTime
+  const sortedPositions = [...closedPositions].sort((a, b) => a.openTime.getTime() - b.openTime.getTime());
 
   for (let i = 1; i < sortedPositions.length; i++) {
     const currentPosition = sortedPositions[i];
     const previousPosition = sortedPositions[i - 1];
 
-    const currentPositionSize = currentPosition.trades.reduce((sum, t) => sum + t.value, 0);
-    const currentStartTime = currentPosition.trades[0].orderExecutionTime;
-    const previousEndTime = previousPosition.trades[previousPosition.trades.length - 1].orderExecutionTime;
-
-    // Large position after loss
-    if (previousPosition.realizedPnL < 0 && currentPositionSize > avgPositionSize * 1.5) {
+    // Large position after loss (>150% of average size after a losing trade)
+    if (previousPosition.realizedPnL < 0 && Math.abs(currentPosition.maxQuantity) > avgPositionSize * 1.5) {
       largePositionAfterLoss++;
     }
 
     // Rapid fire trades (within 15 minutes)
-    const timeDiffMinutes = (currentStartTime.getTime() - previousEndTime.getTime()) / (1000 * 60);
+    const timeDiffMinutes = (currentPosition.openTime.getTime() - (previousPosition.closeTime?.getTime() || previousPosition.openTime.getTime())) / (1000 * 60);
     if (timeDiffMinutes <= 15 && timeDiffMinutes >= 0) {
       rapidFireTrades++;
     }
@@ -1890,15 +1900,14 @@ export function calculateBehavioralPatterns(trades: Trade[]): BehavioralPatterns
 
   // Late night trades (after 3 PM)
   lateNightTrades = closedPositions.filter(p => {
-    const startTime = p.trades[0].orderExecutionTime;
-    return startTime.getHours() >= 15;
+    return p.openTime.getHours() >= 15;
   }).length;
 
   return {
     profitTakingSpeed: {
       avgWinHoldTime,
       avgLossHoldTime,
-      ratio,
+      ratio,  
       pattern
     },
     weekendGapEffect: {

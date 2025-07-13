@@ -1,7 +1,7 @@
 import React, { useMemo } from "react"
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell, PieChart, Pie } from "recharts"
 import { Trade } from "../types/trade"
-import { calculateRevengeTradingAnalysis, calculateOvertradingAnalysis, calculateBehavioralPatterns, RevengeTradingAnalysis, OvertradingAnalysis, BehavioralPatterns } from "../utils/calculations"
+import { calculateRevengeTradingAnalysis, calculateOvertradingAnalysis, calculateBehavioralPatterns, RevengeTradingAnalysis, OvertradingAnalysis, BehavioralPatterns, calculatePositions } from "../utils/calculations"
 import { Brain, AlertTriangle, Clock, TrendingDown } from "lucide-react"
 import { InfoTooltip } from './InfoTooltip'
 import { AIRecommendations } from './AIRecommendations'
@@ -16,9 +16,15 @@ interface PsychologicalPatternsChartsProps {
 const COLORS = ["#EF4444", "#10B981", "#3B82F6", "#F59E0B", "#8B5CF6", "#EC4899"]
 
 export function PsychologicalPatternsCharts({ trades }: PsychologicalPatternsChartsProps) {
-  const revengeTradingAnalysis = useMemo(() => calculateRevengeTradingAnalysis(trades), [trades])
-  const overtradingAnalysis = useMemo(() => calculateOvertradingAnalysis(trades), [trades])
-  const behavioralPatterns = useMemo(() => calculateBehavioralPatterns(trades), [trades])
+  const positions = useMemo(() => calculatePositions(trades), [trades])
+  const revengeTradingAnalysis = useMemo(() => calculateRevengeTradingAnalysis(positions), [positions])
+  const overtradingAnalysis = useMemo(() => calculateOvertradingAnalysis(positions), [positions])
+  const behavioralPatterns = useMemo(() => calculateBehavioralPatterns(positions), [positions])
+
+  console.log(revengeTradingAnalysis,
+overtradingAnalysis,
+behavioralPatterns);
+  
 
   // Prepare comparison data for revenge vs normal trades
   const revengeComparisonData = [

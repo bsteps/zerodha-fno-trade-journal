@@ -209,7 +209,9 @@ Provide detailed but concise analysis in this format:
 - [Insight 1: Pattern/trend observed with significance]
 - [Insight 2: Performance metric interpretation]
 
-Focus on ${focusArea}. Be specific with numbers, percentages, and actionable steps. Each point should be 1-2 lines maximum.`
+Focus on ${focusArea}. Be specific with numbers, percentages, and actionable steps. Each point should be 1-2 lines maximum.
+
+Start your response with "## 🎯 Immediate Actions (Today)"`
 
     return basePrompt
   }

@@ -2,7 +2,7 @@ import { Activity, Calendar, Clock, TrendingUp } from "lucide-react"
 import { useMemo } from "react"
 import { Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, PolarAngleAxis, PolarGrid, PolarRadiusAxis, Radar, RadarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts"
 import { Trade } from "../types/trade"
-import { calculateDayOfWeekAnalysis, calculateMarketSessionAnalysis, calculateVolatilityAnalysis } from "../utils/calculations"
+import { calculateDayOfWeekAnalysis, calculateMarketSessionAnalysis, calculatePositions, calculateHoldingPeriodAnalysis } from "../utils/calculations"
 import { AIRecommendations } from './AIRecommendations'
 import { StatCard } from './StatCard'
 import { CustomTooltip } from './CustomTooltip'
@@ -15,11 +15,14 @@ interface MarketTimingChartsProps {
 const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042", "#8884D8", "#82CA9D", "#FFC658"]
 
 export function MarketTimingCharts({ trades }: MarketTimingChartsProps) {
-  const dayOfWeekAnalysis = useMemo(() => calculateDayOfWeekAnalysis(trades), [trades])
-  const marketSessionAnalysis = useMemo(() => calculateMarketSessionAnalysis(trades), [trades])
-  const volatilityAnalysis = useMemo(() => calculateVolatilityAnalysis(trades), [trades])
+  const positions = useMemo(() => calculatePositions(trades), [trades])
 
+  const dayOfWeekAnalysis = useMemo(() => calculateDayOfWeekAnalysis(positions), [positions])
+  const marketSessionAnalysis = useMemo(() => calculateMarketSessionAnalysis(positions), [positions])
+  const holdingPeriodAnalysis = useMemo(() => calculateHoldingPeriodAnalysis(positions), [positions])
 
+  console.log(marketSessionAnalysis);
+  
 
   // Find best performing day and session
   const bestDay = dayOfWeekAnalysis.reduce((best, day) => 
@@ -32,9 +35,9 @@ export function MarketTimingCharts({ trades }: MarketTimingChartsProps) {
     marketSessionAnalysis[0] || { session: 'N/A', avgPnL: 0, winRate: 0 }
   )
 
-  const bestVolatilityRange = volatilityAnalysis.reduce((best, vol) => 
-    vol.avgPnL > best.avgPnL ? vol : best, 
-    volatilityAnalysis[0] || { volatilityRange: 'N/A', avgPnL: 0, winRate: 0 }
+  const bestHoldingPeriod = holdingPeriodAnalysis.reduce((best, period) =>
+    period.avgPnL > best.avgPnL ? period : best,
+    holdingPeriodAnalysis[0] || { holdingPeriodRange: 'N/A', avgPnL: 0, winRate: 0 }
   )
 
   // Prepare radar chart data for day of week analysis
@@ -70,11 +73,11 @@ export function MarketTimingCharts({ trades }: MarketTimingChartsProps) {
             subtitle={`${formatCurrency(bestSession.avgPnL)} avg • ${bestSession.timeRange}`}
           />
           <StatCard
-            title="Best Volatility"
-            value={bestVolatilityRange.volatilityRange}
+            title="Best Holding Period"
+            value={bestHoldingPeriod.holdingPeriodRange}
             icon={Activity}
             color="yellow"
-            subtitle={`${formatCurrency(bestVolatilityRange.avgPnL)} avg P&L`}
+            subtitle={`${formatCurrency(bestHoldingPeriod.avgPnL)} avg P&L`}
           />
           <StatCard
             title="Trading Days"
@@ -176,32 +179,32 @@ export function MarketTimingCharts({ trades }: MarketTimingChartsProps) {
         </div>
       )}
 
-      {/* Volatility Analysis */}
-      {volatilityAnalysis.length > 0 && (
+      {/* Holding Period Analysis */}
+      {holdingPeriodAnalysis.length > 0 && (
         <div className='card'>
-          <h3 className='text-lg font-semibold text-gray-900 mb-4'>Volatility vs Performance Analysis</h3>
+          <h3 className='text-lg font-semibold text-gray-900 mb-4'>Holding Period vs Performance Analysis</h3>
           <div className='grid grid-cols-1 lg:grid-cols-2 gap-6'>
             <div className='h-64'>
               <ResponsiveContainer width='100%' height='100%'>
-                <BarChart data={volatilityAnalysis}>
+                <BarChart data={holdingPeriodAnalysis} margin={{ left: 20 }}>
                   <CartesianGrid strokeDasharray='3 3' />
-                  <XAxis dataKey='volatilityRange' angle={-45} textAnchor='end' height={80} />
+                  <XAxis dataKey='holdingPeriodRange' angle={-45} textAnchor='end' height={80} />
                   <YAxis tickFormatter={(value) => formatCurrency(value)} />
                   <Tooltip content={<CustomTooltip />} />
                   <Bar dataKey='avgPnL' name='Average P&L'>
-                    {volatilityAnalysis.map((entry, index) => (
+                    {holdingPeriodAnalysis.map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={entry.avgPnL >= 0 ? "#10B981" : "#EF4444"} />
                     ))}
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
             </div>
-            
+
             <div className='h-64'>
               <ResponsiveContainer width='100%' height='100%'>
-                <LineChart data={volatilityAnalysis}>
+                <LineChart data={holdingPeriodAnalysis}>
                   <CartesianGrid strokeDasharray='3 3' />
-                  <XAxis dataKey='volatilityRange' angle={-45} textAnchor='end' height={80} />
+                  <XAxis dataKey='holdingPeriodRange' angle={-45} textAnchor='end' height={80} />
                   <YAxis domain={[0, 100]} />
                   <Tooltip content={<CustomTooltip />} />
                   <Line type='monotone' dataKey='winRate' stroke='#8B5CF6' strokeWidth={3} name='Win Rate (%)' />
@@ -209,13 +212,16 @@ export function MarketTimingCharts({ trades }: MarketTimingChartsProps) {
               </ResponsiveContainer>
             </div>
           </div>
-          
+
           <div className='mt-4 p-4 bg-blue-50 rounded-lg'>
-            <h5 className='font-medium text-blue-900 mb-2'>Volatility Insights:</h5>
+            <h5 className='font-medium text-blue-900 mb-2'>Holding Period Insights:</h5>
             <ul className='text-sm text-blue-700 space-y-1'>
-              <li>• <strong>Low Volatility:</strong> More predictable price movements, potentially safer trades</li>
-              <li>• <strong>High Volatility:</strong> Larger price swings, higher risk but potentially higher rewards</li>
-              <li>• <strong>Optimal Range:</strong> {bestVolatilityRange.volatilityRange} shows best average P&L</li>
+              <li>• <strong>Scalping (0-15 min):</strong> Quick trades with minimal time exposure</li>
+              <li>• <strong>Short-term (15-60 min):</strong> Brief positions capturing short-term moves</li>
+              <li>• <strong>Medium-term (1-4 hours):</strong> Moderate holding periods for trend following</li>
+              <li>• <strong>Intraday (4-24 hours):</strong> Full session or overnight positions</li>
+              <li>• <strong>Multi-day (1+ days):</strong> Swing trading with extended exposure</li>
+              <li>• <strong>Optimal Period:</strong> {bestHoldingPeriod.holdingPeriodRange} shows best average P&L</li>
             </ul>
           </div>
         </div>
@@ -250,7 +256,7 @@ export function MarketTimingCharts({ trades }: MarketTimingChartsProps) {
         analysisData={{
           dayOfWeekAnalysis,
           marketSessionAnalysis,
-          volatilityAnalysis
+          holdingPeriodAnalysis
         }}
         pageContext="market-timing"
         pageTitle="Market Timing Analysis"
