@@ -28,6 +28,7 @@ interface BrokerageCharges {
   transactionCharges: number;
   sebiCharges: number;
   stampCharges: number;
+  ipftCharges: number;
   gst: number;
   totalCharges: number;
 }
@@ -65,78 +66,166 @@ export function mergeTradesByOrderId(trades: Trade[]): Trade[] {
   return Array.from(orderMap.values());
 }
 
-// Calculate brokerage charges based on broker fee structure
+
+
+// Calculate brokerage charges for all orders in a position
 export function calculateBrokerageCharges(
-  trade: Trade,
+  position: EnhancedPosition,
   exchange: 'NSE' | 'BSE' = 'NSE'
 ): BrokerageCharges {
-  const { instrumentType, tradeType, value, quantity } = trade;
+  const { instrumentType } = position;
 
-  // 1. Brokerage calculation
-  let brokerage = 0;
-  if (instrumentType === 'FUT') {
-    // F&O Futures: 0.03% or Rs. 20/executed order whichever is lower
-    brokerage = Math.min(value * 0.0003, 20);
-  } else if (instrumentType === 'CE' || instrumentType === 'PE') {
-    // F&O Options: Flat Rs. 20 per executed order
-    brokerage = 20;
+  // Determine if equity trade is intraday based on position timing
+  let isIntraday = true;
+  if (position.openTime && position.closeTime) {
+    // Check if position was opened and closed on the same day
+    const startDate = format(position.openTime, 'yyyy-MM-dd');
+    const endDate = format(position.closeTime, 'yyyy-MM-dd');
+    isIntraday = startDate === endDate;
   }
-  // Note: Equity delivery is zero brokerage, equity intraday would be 0.03% or Rs. 20 whichever is lower
 
-  // 2. STT/CTT calculation
-  let stt = 0;
-  if (instrumentType === 'FUT') {
-    // F&O Futures: 0.02% on sell side
-    if (tradeType === 'sell') {
-      stt = value * 0.0002;
+  // Group trades by order ID to calculate brokerage per order
+  const orderMap = new Map<string, Trade[]>();
+  position.trades.forEach(trade => {
+    if (!orderMap.has(trade.orderId)) {
+      orderMap.set(trade.orderId, []);
     }
-  } else if (instrumentType === 'CE' || instrumentType === 'PE') {
-    // F&O Options: 0.1% on sell side (on premium)
-    if (tradeType === 'sell') {
-      stt = value * 0.001;
-    }
-    // Note: 0.125% of intrinsic value on exercised options - not calculated here
-  }
+    orderMap.get(trade.orderId)!.push(trade);
+  });
 
-  // 3. Transaction charges
-  let transactionCharges = 0;
-  if (instrumentType === 'FUT') {
-    // F&O Futures
-    transactionCharges = exchange === 'NSE' ? value * 0.0000173 : 0;
-  } else if (instrumentType === 'CE' || instrumentType === 'PE') {
-    // F&O Options (on premium)
-    transactionCharges = exchange === 'NSE' ?
-      value * 0.0003503 :
-      value * 0.000325;
-  }
+  // Initialize total charges
+  let totalBrokerage = 0;
+  let totalStt = 0;
+  let totalTransactionCharges = 0;
+  let totalSebiCharges = 0;
+  let totalStampCharges = 0;
+  let totalIpftCharges = 0;
+  let totalGst = 0;
 
-  // 4. SEBI charges: ₹10 per crore
-  const sebiCharges = (value / 10000000) * 10;
+  // Calculate charges for each order
+  orderMap.forEach(orderTrades => {
+    // Calculate order totals
+    const orderBuyValue = orderTrades
+      .filter(t => t.tradeType === 'buy')
+      .reduce((sum, t) => sum + t.value, 0);
+    const orderSellValue = orderTrades
+      .filter(t => t.tradeType === 'sell')
+      .reduce((sum, t) => sum + t.value, 0);
+    const orderTotalValue = orderBuyValue + orderSellValue;
 
-  // 5. Stamp charges (on buy side only)
-  let stampCharges = 0;
-  if (tradeType === 'buy') {
+    // 1. Brokerage calculation per order
+    let orderBrokerage = 0;
     if (instrumentType === 'FUT') {
-      // F&O Futures: 0.002% or ₹200/crore on buy side
-      stampCharges = Math.min(value * 0.00002, (value / 10000000) * 200);
+      // F&O Futures: 0.03% or Rs. 20/executed order whichever is lower
+      orderBrokerage = Math.min(orderTotalValue * 0.0003, 20);
     } else if (instrumentType === 'CE' || instrumentType === 'PE') {
-      // F&O Options: 0.003% or ₹300/crore on buy side
-      stampCharges = Math.min(value * 0.00003, (value / 10000000) * 300);
+      // F&O Options: Flat Rs. 20 per executed order
+      orderBrokerage = 20;
+    } else if (instrumentType === 'EQ') {
+      if (isIntraday) {
+        // Equity intraday: 0.03% or Rs. 20/executed order whichever is lower
+        orderBrokerage = Math.min(orderTotalValue * 0.0003, 20);
+      } else {
+        // Equity delivery: Zero brokerage
+        orderBrokerage = 0;
+      }
     }
-  }
 
-  // 6. GST: 18% on (brokerage + SEBI charges + transaction charges)
-  const gst = (brokerage + sebiCharges + transactionCharges) * 0.18;
+    // 2. STT/CTT calculation per order
+    let orderStt = 0;
+    if (instrumentType === 'FUT') {
+      // F&O Futures: 0.02% on sell side
+      orderStt = orderSellValue * 0.0002;
+    } else if (instrumentType === 'CE' || instrumentType === 'PE') {
+      // F&O Options: 0.1% on sell side (on premium)
+      orderStt = orderSellValue * 0.001;
+      // Note: 0.125% of intrinsic value on exercised options - not calculated here
+    } else if (instrumentType === 'EQ') {
+      if (isIntraday) {
+        // Equity intraday: 0.025% on sell side only
+        orderStt = orderSellValue * 0.00025;
+      } else {
+        // Equity delivery: 0.1% on both buy and sell sides
+        orderStt = orderTotalValue * 0.001;
+      }
+    }
 
-  const totalCharges = brokerage + stt + transactionCharges + sebiCharges + stampCharges + gst;
+    // 3. Transaction charges per order
+    let orderTransactionCharges = 0;
+    if (instrumentType === 'FUT') {
+      // F&O Futures
+      orderTransactionCharges = exchange === 'NSE' ? orderTotalValue * 0.0000173 : 0;
+    } else if (instrumentType === 'CE' || instrumentType === 'PE') {
+      // F&O Options (on premium)
+      orderTransactionCharges = exchange === 'NSE' ?
+        orderTotalValue * 0.0003503 :
+        orderTotalValue * 0.000325;
+    } else if (instrumentType === 'EQ') {
+      // Equity: NSE 0.00297%, BSE 0.00375% (same for both intraday and delivery)
+      orderTransactionCharges = exchange === 'NSE' ?
+        orderTotalValue * 0.0000297 :
+        orderTotalValue * 0.0000375;
+    }
+
+    // 4. SEBI charges per order: ₹10 per crore
+    const orderSebiCharges = (orderTotalValue / 10000000) * 10;
+
+    // 5. IPFT charges per order (NSE only)
+    let orderIpftCharges = 0;
+    if (exchange === 'NSE') {
+      if (instrumentType === 'FUT' || instrumentType === 'EQ') {
+        // NSE Equity and NSE futures: ₹10 per crore of traded value + 18% GST
+        orderIpftCharges = (orderTotalValue / 10000000) * 10 * 1.18;
+      } else if (instrumentType === 'CE' || instrumentType === 'PE') {
+        // NSE Equity options: ₹50 per crore of premium value + 18% GST
+        orderIpftCharges = (orderTotalValue / 10000000) * 50 * 1.18;
+      }
+    }
+
+    // 6. Stamp charges per order (on buy side only)
+    let orderStampCharges = 0;
+    if (orderBuyValue > 0) { // Only apply if there were buy transactions
+      if (instrumentType === 'FUT') {
+        // F&O Futures: 0.002% or ₹200/crore on buy side
+        orderStampCharges = Math.min(orderBuyValue * 0.00002, (orderBuyValue / 10000000) * 200);
+      } else if (instrumentType === 'CE' || instrumentType === 'PE') {
+        // F&O Options: 0.003% or ₹300/crore on buy side
+        orderStampCharges = Math.min(orderBuyValue * 0.00003, (orderBuyValue / 10000000) * 300);
+      } else if (instrumentType === 'EQ') {
+        if (isIntraday) {
+          // Equity intraday: 0.003% or ₹300/crore on buy side
+          orderStampCharges = Math.min(orderBuyValue * 0.00003, (orderBuyValue / 10000000) * 300);
+        } else {
+          // Equity delivery: 0.015% or ₹1500/crore on buy side
+          orderStampCharges = Math.min(orderBuyValue * 0.00015, (orderBuyValue / 10000000) * 1500);
+        }
+      }
+    }
+
+    // 7. GST per order: 18% on (brokerage + SEBI charges + transaction charges)
+    // Note: IPFT charges already include GST, so we don't add GST on IPFT
+    const orderGst = (orderBrokerage + orderSebiCharges + orderTransactionCharges) * 0.18;
+
+    // Add to totals
+    totalBrokerage += orderBrokerage;
+    totalStt += orderStt;
+    totalTransactionCharges += orderTransactionCharges;
+    totalSebiCharges += orderSebiCharges;
+    totalStampCharges += orderStampCharges;
+    totalIpftCharges += orderIpftCharges;
+    totalGst += orderGst;
+  });
+
+  const totalCharges = totalBrokerage + totalStt + totalTransactionCharges + totalSebiCharges + totalStampCharges + totalIpftCharges + totalGst;
 
   return {
-    brokerage,
-    stt,
-    transactionCharges,
-    sebiCharges,
-    stampCharges,
-    gst,
+    brokerage: totalBrokerage,
+    stt: totalStt,
+    transactionCharges: totalTransactionCharges,
+    sebiCharges: totalSebiCharges,
+    stampCharges: totalStampCharges,
+    ipftCharges: totalIpftCharges,
+    gst: totalGst,
     totalCharges
   };
 }
@@ -150,6 +239,7 @@ interface EnhancedPosition extends Position {
   exitPrice?: number;
   maxQuantity: number;
   remainingQuantity: number;
+  positionType: 'long' | 'short'; // Track if position was initiated as long or short
 }
 
 export function calculatePositions(trades: Trade[]): EnhancedPosition[] {
@@ -225,7 +315,8 @@ export function calculatePositions(trades: Trade[]): EnhancedPosition[] {
           openTime: trade.orderExecutionTime,
           entryPrice: trade.price,
           maxQuantity: remainingQuantity,
-          remainingQuantity: remainingQuantity
+          remainingQuantity: remainingQuantity,
+          positionType: 'long' // Buy trade creates long position
         };
 
         instrumentPositions.push(newPosition);
@@ -290,7 +381,8 @@ export function calculatePositions(trades: Trade[]): EnhancedPosition[] {
           openTime: trade.orderExecutionTime,
           entryPrice: trade.price,
           maxQuantity: remainingQuantity,
-          remainingQuantity: remainingQuantity
+          remainingQuantity: remainingQuantity,
+          positionType: 'short' // Sell trade creates short position
         };
 
         instrumentPositions.push(newPosition);
@@ -321,7 +413,10 @@ export interface EnhancedDailyPnL extends DailyPnL {
 export function calculateDailyPnL(trades: Trade[]): EnhancedDailyPnL[] {
   const dailyMap = new Map<string, EnhancedDailyPnL>();
 
-  // Initialize daily data
+  // Calculate positions first
+  const allPositions = calculatePositions(trades);
+
+  // Initialize daily data from trades
   trades.forEach(trade => {
     const dateKey = format(startOfDay(trade.tradeDate), 'yyyy-MM-dd');
 
@@ -345,25 +440,24 @@ export function calculateDailyPnL(trades: Trade[]): EnhancedDailyPnL[] {
     }
   });
 
-  // Calculate brokerage and order counts for each merged trade (order)
-  trades.forEach(trade => {
-    const dateKey = format(startOfDay(trade.tradeDate), 'yyyy-MM-dd');
+  // Calculate brokerage and order counts for each position
+  allPositions.forEach(position => {
+    const dateKey = format(startOfDay(position.openTime), 'yyyy-MM-dd');
     const daily = dailyMap.get(dateKey);
 
     if (daily) {
-      const charges = calculateBrokerageCharges(trade, trade.exchange as 'NSE' | 'BSE');
+      const charges = calculateBrokerageCharges(position, position.trades[0]?.exchange as 'NSE' | 'BSE' || 'NSE');
       daily.brokerage += charges.totalCharges;
       daily.totalOrders++;
-      daily.grossTurnover += trade.value;
+      daily.grossTurnover += position.totalBuyValue + position.totalSellValue;
 
-      // Count individual trade executions for this order
-      daily.totalTrades += trade.trades?.length ?? 0;
+      // Count individual trade executions for this position
+      daily.totalTrades += position.trades?.length ?? 0;
     }
   });
 
   // Calculate P&L for each day - distribute across trading days for better performance metrics
-  const positions = calculatePositions(trades);
-  positions.forEach(position => {
+  allPositions.forEach(position => {
     if (position.status === 'closed' && position.realizedPnL !== 0) {
       // Get unique trading dates for this position
       const tradingDates = [...new Set(position.trades.map(trade =>
@@ -438,10 +532,10 @@ export function calculateTradeStatistics(trades: Trade[]): TradeStatistics {
 
   const totalPnL = closedPositions.reduce((sum, p) => sum + p.realizedPnL, 0);
 
-  // Calculate accurate brokerage using merged trades
-  const grossTurnover = trades.reduce((sum, mt) => sum + mt.value, 0);
-  const totalBrokerage = trades.reduce((sum, mt) => {
-    const charges = calculateBrokerageCharges(mt, mt.exchange as 'NSE' | 'BSE');
+  // Calculate accurate brokerage using positions
+  const grossTurnover = closedPositions.reduce((sum, p) => sum + p.totalBuyValue + p.totalSellValue, 0);
+  const totalBrokerage = closedPositions.reduce((sum, position) => {
+    const charges = calculateBrokerageCharges(position, position.trades[0]?.exchange as 'NSE' | 'BSE' || 'NSE');
     return sum + charges.totalCharges;
   }, 0);
 
@@ -528,11 +622,13 @@ export function calculateSymbolPerformance(trades: Trade[]): SymbolPerformance[]
 }
 
 // Get detailed brokerage breakdown for analysis
-export function getBrokerageBreakdown(trades: Trade[]): {
-  trades: Trade[];
+export function getBrokerageBreakdown(positions: EnhancedPosition[]): {
+  positions: EnhancedPosition[];
   totalCharges: BrokerageCharges;
   dailyCharges: { date: string; charges: BrokerageCharges }[];
 } {
+  // Calculate positions first
+
   // Calculate total charges
   const totalCharges: BrokerageCharges = {
     brokerage: 0,
@@ -540,14 +636,15 @@ export function getBrokerageBreakdown(trades: Trade[]): {
     transactionCharges: 0,
     sebiCharges: 0,
     stampCharges: 0,
+    ipftCharges: 0,
     gst: 0,
     totalCharges: 0
   };
 
   const dailyChargesMap = new Map<string, BrokerageCharges>();
 
-  trades.forEach(trade => {
-    const charges = calculateBrokerageCharges(trade, trade.exchange as 'NSE' | 'BSE');
+  positions.forEach(position => {
+    const charges = calculateBrokerageCharges(position, position.trades[0]?.exchange as 'NSE' | 'BSE' || 'NSE');
 
     // Add to total
     totalCharges.brokerage += charges.brokerage;
@@ -555,11 +652,12 @@ export function getBrokerageBreakdown(trades: Trade[]): {
     totalCharges.transactionCharges += charges.transactionCharges;
     totalCharges.sebiCharges += charges.sebiCharges;
     totalCharges.stampCharges += charges.stampCharges;
+    totalCharges.ipftCharges += charges.ipftCharges;
     totalCharges.gst += charges.gst;
     totalCharges.totalCharges += charges.totalCharges;
 
     // Add to daily breakdown
-    const dateKey = format(startOfDay(trade.tradeDate), 'yyyy-MM-dd');
+    const dateKey = format(startOfDay(position.openTime), 'yyyy-MM-dd');
     if (!dailyChargesMap.has(dateKey)) {
       dailyChargesMap.set(dateKey, {
         brokerage: 0,
@@ -567,6 +665,7 @@ export function getBrokerageBreakdown(trades: Trade[]): {
         transactionCharges: 0,
         sebiCharges: 0,
         stampCharges: 0,
+        ipftCharges: 0,
         gst: 0,
         totalCharges: 0
       });
@@ -578,6 +677,7 @@ export function getBrokerageBreakdown(trades: Trade[]): {
     dailyCharges.transactionCharges += charges.transactionCharges;
     dailyCharges.sebiCharges += charges.sebiCharges;
     dailyCharges.stampCharges += charges.stampCharges;
+    dailyCharges.ipftCharges += charges.ipftCharges;
     dailyCharges.gst += charges.gst;
     dailyCharges.totalCharges += charges.totalCharges;
   });
@@ -588,7 +688,7 @@ export function getBrokerageBreakdown(trades: Trade[]): {
   })).sort((a, b) => a.date.localeCompare(b.date));
 
   return {
-    trades,
+    positions,
     totalCharges,
     dailyCharges
   };
@@ -1367,7 +1467,7 @@ export interface EntryExitTimingAnalysis {
 }
 
 export interface InstrumentTypeAnalysis {
-  instrumentType: 'CE' | 'PE' | 'FUT';
+  instrumentType: 'CE' | 'PE' | 'FUT' | 'EQ';
   instrumentName: string;
   totalTrades: number;
   totalPnL: number;
@@ -1516,7 +1616,8 @@ export function calculateInstrumentTypeAnalysis(positions: EnhancedPosition[]): 
 
     if (!instrumentMap.has(key)) {
       const instrumentName = instrumentType === 'CE' ? 'Call Options' :
-        instrumentType === 'PE' ? 'Put Options' : 'Futures';
+        instrumentType === 'PE' ? 'Put Options' :
+        instrumentType === 'FUT' ? 'Futures' : 'Equity';
 
       instrumentMap.set(key, {
         instrumentType,

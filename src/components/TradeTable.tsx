@@ -15,7 +15,7 @@ export function TradeTable({ trades }: TradeTableProps) {
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'buy' | 'sell'>('all');
-  const [filterInstrument, setFilterInstrument] = useState<'all' | 'CE' | 'PE' | 'FUT'>('all');
+  const [filterInstrument, setFilterInstrument] = useState<'all' | 'CE' | 'PE' | 'FUT' | 'EQ'>('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
   const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set());
@@ -146,6 +146,7 @@ export function TradeTable({ trades }: TradeTableProps) {
             <option value="CE">Call Options</option>
             <option value="PE">Put Options</option>
             <option value="FUT">Futures</option>
+            <option value="EQ">Equity</option>
           </select>
           
           <select

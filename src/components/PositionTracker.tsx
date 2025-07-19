@@ -11,9 +11,13 @@ interface PositionTrackerProps {
 
 export function PositionTracker({ trades }: PositionTrackerProps) {
   const positions = useMemo(() => calculatePositions(trades), [trades]);
-  
-  const openPositions = positions.filter(p => p.status === 'open');
-  const closedPositions = positions.filter(p => p.status === 'closed');
+
+  const openPositions = positions
+    .filter(p => p.status === 'open')
+    .sort((a, b) => b.openTime.getTime() - a.openTime.getTime()); // Most recent first
+  const closedPositions = positions
+    .filter(p => p.status === 'closed')
+    .sort((a, b) => b.openTime.getTime() - a.openTime.getTime()); // Most recent first
   
   const totalRealizedPnL = closedPositions.reduce((sum, p) => sum + p.realizedPnL, 0);
   const totalUnrealizedPnL = openPositions.reduce((sum, p) => sum + p.unrealizedPnL, 0);
@@ -69,12 +73,11 @@ export function PositionTracker({ trades }: PositionTrackerProps) {
               <thead className="bg-gray-50">
                 <tr>
                   <th className="table-header">Symbol</th>
-                  <th className="table-header">Type</th>
-                  <th className="table-header">Strike</th>
-                  <th className="table-header">Expiry</th>
-                  <th className="table-header">Net Qty</th>
-                  <th className="table-header">Avg Buy Price</th>
-                  <th className="table-header">Avg Sell Price</th>
+                  <th className="table-header">Position</th>
+                  <th className="table-header">Quantity</th>
+                  <th className="table-header">Entry Time</th>
+                  <th className="table-header">Entry Price</th>
+                  <th className="table-header">Current Price</th>
                   <th className="table-header">Unrealized P&L</th>
                 </tr>
               </thead>
@@ -85,35 +88,41 @@ export function PositionTracker({ trades }: PositionTrackerProps) {
                       <div>
                         <div className="font-medium">{position.symbol}</div>
                         <div className="text-xs text-gray-500">
-                          {position.trades.length} trades
+                          {position.instrumentType}
+                          {position.strikePrice && ` ${position.strikePrice}`}
                         </div>
                       </div>
                     </td>
                     <td className="table-cell">
-                      <span className="inline-flex px-2 py-1 text-xs font-medium rounded bg-blue-100 text-blue-800">
-                        {position.instrumentType}
+                      <span className={`inline-flex px-2 py-1 text-xs font-medium rounded ${
+                        position.positionType === 'long'
+                          ? 'bg-green-100 text-green-800'
+                          : 'bg-red-100 text-red-800'
+                      }`}>
+                        {position.positionType === 'long' ? 'LONG' : 'SHORT'}
                       </span>
                     </td>
-                    <td className="table-cell font-mono">
-                      {position.strikePrice || '-'}
-                    </td>
                     <td className="table-cell">
-                      {format(position.expiryDate, 'dd MMM yyyy')}
-                    </td>
-                    <td className="table-cell">
-                      <span
-                        className={`font-mono font-medium ${
-                          position.netQuantity > 0 ? 'text-green-600' : 'text-red-600'
-                        }`}
-                      >
-                        {position.netQuantity > 0 ? '+' : ''}{position.netQuantity}
+                      <span className="font-mono font-medium">
+                        {Math.abs(position.maxQuantity)}
                       </span>
                     </td>
-                    <td className="table-cell font-mono">
-                      {position.avgBuyPrice > 0 ? formatCurrency(position.avgBuyPrice) : '-'}
+                    <td className="table-cell">
+                      <div className="text-sm">
+                        {format(position.openTime, 'dd MMM yyyy')}
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        {format(position.openTime, 'HH:mm:ss')}
+                      </div>
                     </td>
                     <td className="table-cell font-mono">
-                      {position.avgSellPrice > 0 ? formatCurrency(position.avgSellPrice) : '-'}
+                      {formatCurrency(position.entryPrice)}
+                    </td>
+                    <td className="table-cell font-mono">
+                      {position.positionType === 'long'
+                        ? (position.avgSellPrice > 0 ? formatCurrency(position.avgSellPrice) : '-')
+                        : (position.avgBuyPrice > 0 ? formatCurrency(position.avgBuyPrice) : '-')
+                      }
                     </td>
                     <td className="table-cell">
                       <PnLDisplay value={position.unrealizedPnL} />
@@ -136,46 +145,66 @@ export function PositionTracker({ trades }: PositionTrackerProps) {
             <thead className="bg-gray-50">
               <tr>
                 <th className="table-header">Symbol</th>
-                <th className="table-header">Type</th>
-                <th className="table-header">Strike</th>
-                <th className="table-header">Expiry</th>
-                <th className="table-header">Trades</th>
-                <th className="table-header">Avg Buy Price</th>
-                <th className="table-header">Avg Sell Price</th>
+                <th className="table-header">Position</th>
+                <th className="table-header">Quantity</th>
+                <th className="table-header">Entry Time</th>
+                <th className="table-header">Exit Time</th>
+                <th className="table-header">Entry Price</th>
+                <th className="table-header">Exit Price</th>
                 <th className="table-header">Realized P&L</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {closedPositions
-                .sort((a, b) => b.realizedPnL - a.realizedPnL)
-                .map((position, index) => (
+              {closedPositions.map((position, index) => (
                 <tr key={index} className="hover:bg-gray-50">
                   <td className="table-cell">
                     <div>
                       <div className="font-medium">{position.symbol}</div>
+                      <div className="text-xs text-gray-500">
+                        {position.instrumentType}
+                        {position.strikePrice && ` ${position.strikePrice}`}
+                      </div>
                     </div>
                   </td>
                   <td className="table-cell">
-                    <span className="inline-flex px-2 py-1 text-xs font-medium rounded bg-blue-100 text-blue-800">
-                      {position.instrumentType}
+                    <span className={`inline-flex px-2 py-1 text-xs font-medium rounded ${
+                      position.positionType === 'long'
+                        ? 'bg-green-100 text-green-800'
+                        : 'bg-red-100 text-red-800'
+                    }`}>
+                      {position.positionType === 'long' ? 'LONG' : 'SHORT'}
                     </span>
                   </td>
-                  <td className="table-cell font-mono">
-                    {position.strikePrice || '-'}
-                  </td>
                   <td className="table-cell">
-                    {format(position.expiryDate, 'dd MMM yyyy')}
-                  </td>
-                  <td className="table-cell">
-                    <span className="text-sm text-gray-600">
-                      {position.trades.length} trades
+                    <span className="font-mono font-medium">
+                      {Math.abs(position.maxQuantity)}
                     </span>
                   </td>
-                  <td className="table-cell font-mono">
-                    {formatCurrency(position.avgBuyPrice)}
+                  <td className="table-cell">
+                    <div className="text-sm">
+                      {format(position.openTime, 'dd MMM yyyy')}
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      {format(position.openTime, 'HH:mm:ss')}
+                    </div>
+                  </td>
+                  <td className="table-cell">
+                    {position.closeTime ? (
+                      <div>
+                        <div className="text-sm">
+                          {format(position.closeTime, 'dd MMM yyyy')}
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          {format(position.closeTime, 'HH:mm:ss')}
+                        </div>
+                      </div>
+                    ) : '-'}
                   </td>
                   <td className="table-cell font-mono">
-                    {formatCurrency(position.avgSellPrice)}
+                    {formatCurrency(position.entryPrice)}
+                  </td>
+                  <td className="table-cell font-mono">
+                    {position.exitPrice ? formatCurrency(position.exitPrice) : '-'}
                   </td>
                   <td className="table-cell">
                     <PnLDisplay value={position.realizedPnL} />

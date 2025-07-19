@@ -32,7 +32,7 @@ export interface Trade {
   orderExecutionTime: Date;
   expiryDate: Date;
   value: number; // quantity * price
-  instrumentType: 'CE' | 'PE' | 'FUT';
+  instrumentType: 'CE' | 'PE' | 'FUT' | 'EQ';
   strikePrice?: number;
   underlyingSymbol: string;
   trades: Trade[];
@@ -40,7 +40,7 @@ export interface Trade {
 
 export interface Position {
   symbol: string;
-  instrumentType: 'CE' | 'PE' | 'FUT';
+  instrumentType: 'CE' | 'PE' | 'FUT' | 'EQ';
   strikePrice?: number;
   expiryDate: Date;
   netQuantity: number;
@@ -113,7 +113,7 @@ export interface FilterOptions {
     end: Date | null;
   };
   symbols: string[];
-  instrumentTypes: ('CE' | 'PE' | 'FUT')[];
+  instrumentTypes: ('CE' | 'PE' | 'FUT' | 'EQ')[];
   tradeTypes: ('buy' | 'sell')[];
   minQuantity: number | null;
   maxQuantity: number | null;

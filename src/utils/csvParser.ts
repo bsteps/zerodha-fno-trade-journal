@@ -8,12 +8,20 @@ export interface ParseResult {
   validRows: number;
 }
 
-export function parseSymbol(symbol: string): {
+export function parseSymbol(symbol: string, segment?: string): {
   underlyingSymbol: string;
-  instrumentType: 'CE' | 'PE' | 'FUT';
+  instrumentType: 'CE' | 'PE' | 'FUT' | 'EQ';
   strikePrice?: number;
   expiryDate?: string;
 } {
+  // Equity instruments
+  if (segment === 'EQ') {
+    return {
+      underlyingSymbol: symbol,
+      instrumentType: 'EQ'
+    };
+  }
+
   // Futures
   if (symbol.includes('FUT')) {
     return {
@@ -63,7 +71,7 @@ export function parseSymbol(symbol: string): {
 
 
 export function transformRawTrade(raw: RawTradeData, index: number): Trade {
-  const symbolInfo = parseSymbol(raw.symbol);
+  const symbolInfo = parseSymbol(raw.symbol, raw.segment);
   
   return {
     id: `${raw.trade_id}_${index}`,
@@ -80,7 +88,7 @@ export function transformRawTrade(raw: RawTradeData, index: number): Trade {
     tradeId: raw.trade_id,
     orderId: raw.order_id,
     orderExecutionTime: new Date(raw.order_execution_time),
-    expiryDate: new Date(raw.expiry_date),
+    expiryDate: raw.expiry_date ? new Date(raw.expiry_date) : new Date(),
     value: raw.quantity * raw.price,
     instrumentType: symbolInfo.instrumentType,
     strikePrice: symbolInfo.strikePrice,
@@ -101,7 +109,7 @@ export function validateTradeData(raw: any): raw is RawTradeData {
     typeof raw.trade_id === 'string' &&
     typeof raw.order_id === 'string' &&
     typeof raw.order_execution_time === 'string' &&
-    typeof raw.expiry_date === 'string'
+    (typeof raw.expiry_date === 'string' || raw.expiry_date === '' || raw.expiry_date == null)
   );
 }
 
